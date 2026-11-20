@@ -69,14 +69,16 @@ function fit() {
 addEventListener('resize', fit); fit();
 
 addEventListener('keydown', e => {
-  if (e.key === 'f' || e.key === 'F') {
+  // 한/영 상태와 상관없이 키보드 위치로 판단 (한글 모드에선 D가 'ㅇ'로 들어오기 때문)
+  const c = e.code;
+  if (c === 'KeyF') {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
     else document.exitFullscreen?.();
   }
-  if (e.key === 'd' || e.key === 'D') debug = !debug;
-  if (e.key === 's' || e.key === 'S') setMode(SETTINGS.stampMode === 1 ? 2 : 1);
-  if (e.key === '1') setMode(1);
-  if (e.key === '2') setMode(2);
+  if (c === 'KeyD') debug = !debug;
+  if (c === 'KeyS') setMode(SETTINGS.stampMode === 1 ? 2 : 1);
+  if (c === 'Digit1' || c === 'Numpad1') setMode(1);
+  if (c === 'Digit2' || c === 'Numpad2') setMode(2);
 });
 document.addEventListener('fullscreenchange', () => document.body.classList.toggle('full', !!document.fullscreenElement));
 
