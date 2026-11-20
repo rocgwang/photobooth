@@ -79,6 +79,7 @@ addEventListener('keydown', e => {
   if (c === 'KeyS') setMode(SETTINGS.stampMode === 1 ? 2 : 1);
   if (c === 'Digit1' || c === 'Numpad1') setMode(1);
   if (c === 'Digit2' || c === 'Numpad2') setMode(2);
+  if (c === 'KeyC') clearStamps();
 });
 document.addEventListener('fullscreenchange', () => document.body.classList.toggle('full', !!document.fullscreenElement));
 
@@ -87,6 +88,22 @@ function setMode(m) {
   SETTINGS.stampMode = m;
   toast = { text: m === 1 ? '도장 방식 1 · 움직이면 콕콕' : '도장 방식 2 · 화면에 꾹', until: performance.now() / 1000 + 1.8 };
 }
+
+// ---------- 도장 지우기 버튼 (방식 2) ----------
+const CLEAR_BTN = { x: 1650, y: 992, w: 230, h: 68 };   // 1920 화면 기준 위치·크기
+let clearPressT = -9;
+function clearStamps() {
+  const now = performance.now() / 1000;
+  for (const p of placed) if (!p.clearT) p.clearT = now;
+  clearPressT = now;
+}
+const toStage = e => {
+  const r = stage.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+};
+const onBtn = p => SETTINGS.stampMode === 2 && p.x >= CLEAR_BTN.x && p.x <= CLEAR_BTN.x + CLEAR_BTN.w && p.y >= CLEAR_BTN.y && p.y <= CLEAR_BTN.y + CLEAR_BTN.h;
+stage.addEventListener('pointerdown', e => { if (onBtn(toStage(e))) clearStamps(); });
+stage.addEventListener('pointermove', e => { stage.style.cursor = onBtn(toStage(e)) ? 'pointer' : 'default'; });
 
 const loadImg = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
 
@@ -203,7 +220,7 @@ function stampAt(x, y, now, pop = false) {
   if (!inEgg(x, y)) return;
   const order = S.stampOrder.map(n => n - 1).filter(i => i >= 0 && i < stamps.length);
   const idx = order.length ? order[seqI++ % order.length] : 0;
-  placed.push({ x, y, t: now, img: stamps[idx], pop, rot: (Math.random() * 2 - 1) * S.stampTilt * Math.PI / 180 });
+  placed.push({ x, y, t: now, img: stamps[idx], pop, keep: S.stampMode === 2, clearT: 0, rot: (Math.random() * 2 - 1) * S.stampTilt * Math.PI / 180 });
   cone.pressT = now; cone.pressKind = pop ? 2 : 1;                                         // 꾹 누르는 모션
 }
 
@@ -335,7 +352,7 @@ if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: 
 function update(dt, now) {
   updateFish(dt);
   updateCone(dt, now);
-  placed = placed.filter(p => now - p.t < S.stampLife);
+  placed = placed.filter(p => p.clearT ? now - p.clearT < 0.35 : (p.keep || now - p.t < S.stampLife));
 }
 
 // ---------- 그리기 ----------
@@ -350,7 +367,8 @@ function draw(now) {
   }
   for (const p of placed) {                                 // 스탬프
     const age = now - p.t, life = S.stampLife;
-    ctx.globalAlpha = age < life - 0.6 ? 1 : Math.max(0, (life - age) / 0.6);
+    ctx.globalAlpha = p.clearT ? Math.max(0, 1 - (now - p.clearT) / 0.35)       // 지우기: 스르륵
+                    : p.keep || age < life - 0.6 ? 1 : Math.max(0, (life - age) / 0.6);
     const sc = p.pop ? 1 + 0.7 * Math.max(0, 1 - age / 0.18) : 1;
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(sc, sc);
     ctx.drawImage(p.img, -S.stampSize / 2, -S.stampSize / 2, S.stampSize, S.stampSize);
@@ -384,6 +402,19 @@ function draw(now) {
   }
 
   ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
+
+  if (S.stampMode === 2) {                                  // 도장 지우기 버튼
+    const b = CLEAR_BTN, press = Math.max(0, 1 - (performance.now() / 1000 - clearPressT) / 0.2);
+    const sc = 1 - 0.06 * press, n = placed.filter(p => !p.clearT).length;
+    ctx.save();
+    ctx.translate(b.x + b.w / 2, b.y + b.h / 2); ctx.scale(sc, sc);
+    ctx.fillStyle = '#115f3b'; ctx.globalAlpha = n ? 1 : 0.55;
+    ctx.beginPath(); ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.font = '700 32px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('도장 지우기', 0, 2);
+    ctx.restore(); ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  }
 
   const nowT = performance.now() / 1000;                    // 도장 방식 바꿨을 때 잠깐 표시
   if (nowT < toast.until) {
