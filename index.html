@@ -238,16 +238,13 @@ function updateFish(dt) {
   const nx = fish.x + fish.vx * dt, ny = fish.y + fish.vy * dt;
   const R = S.charWidth * 0.42;
   if (Math.abs(fish.vx) > 5) fish.face = fish.vx > 0 ? -1 : 1;   // 원본은 왼쪽을 봄
-  let ok = true;
-  for (let k = 0; k < 12 && ok; k++) {
-    const t = k / 12 * Math.PI * 2;
-    if (!inEgg(nx + Math.cos(t) * R, ny + Math.sin(t) * R)) ok = false;
-  }
-  if (ok) { fish.x = nx; fish.y = ny; }
+  // 화면 전체를 날아다님: 가장자리에 닿으면 안쪽으로 방향을 틂
+  const mx = S.charWidth * 0.5, my = S.charWidth * 0.4;
+  if (nx > mx && nx < W - mx && ny > my && ny < H - my) { fish.x = nx; fish.y = ny; }
   else {
-    a = Math.atan2(egg.cy - fish.y, egg.cx - fish.x) + (Math.random() - 0.5) * 1.2;
+    a = Math.atan2(H / 2 - fish.y, W / 2 - fish.x) + (Math.random() - 0.5) * 1.6;
     fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
-    if (!inEgg(fish.x, fish.y)) { fish.x = egg.cx; fish.y = egg.cy; }
+    fish.x = Math.min(W - mx, Math.max(mx, fish.x)); fish.y = Math.min(H - my, Math.max(my, fish.y));
   }
 }
 
@@ -361,6 +358,7 @@ function updateCone(dt, now) {
   if (vx < -60) cone.look = 'L'; else if (vx > 60) cone.look = 'R'; else if (Math.abs(vx) < 25) cone.look = 'M';
 }
 
+if (location.hash === '#test') window.__fish = () => ({ x: fish.x, y: fish.y, inEgg: inEgg(fish.x, fish.y) });
 if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode, pressing: cone.pressing });
 function update(dt, now) {
   updateFish(dt);
@@ -389,14 +387,6 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
 
-  if (charImg) {                                            // 물고기 (둥실둥실)
-    const w = S.charWidth, h = w * charImg.height / charImg.width;
-    ctx.save();
-    ctx.translate(fish.x, fish.y + Math.sin(now * 3) * 6); ctx.rotate(Math.sin(now * 2) * 0.06); ctx.scale(fish.face, 1);
-    ctx.drawImage(charImg, -w / 2, -h / 2, w, h);
-    ctx.restore();
-  }
-
   const img = coneImg[cone.look] || coneImg.M;              // 라바콘
   if (img) {
     const w = coneW(), h = coneH();
@@ -415,6 +405,14 @@ function draw(now) {
   }
 
   ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
+
+  if (charImg) {                                            // 새(물고기): 배경 위, 화면 전체를 날아다님
+    const w = S.charWidth, h = w * charImg.height / charImg.width;
+    ctx.save();
+    ctx.translate(fish.x, fish.y + Math.sin(now * 3) * 6); ctx.rotate(Math.sin(now * 2) * 0.06); ctx.scale(fish.face, 1);
+    ctx.drawImage(charImg, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
 
   if (S.stampMode === 2) {                                  // 도장 지우기 버튼
     const b = CLEAR_BTN, press = Math.max(0, 1 - (performance.now() / 1000 - clearPressT) / 0.2);
