@@ -36,7 +36,7 @@ const SETTINGS = {
   bounce: 0.45,       // 바닥에서 튀는 정도 (0 = 안 튐, 1 = 그대로 튐)
   throwPower: 1.0,    // 놓을 때 던지는 힘 배율
   stampMode: 1,       // 처음 도장 방식: 1 = 움직이면 콕콕, 2 = 내려찍기  (S 키로 전환)
-  pushRatio: 0.15,    // [화면에 꾹] 손이 화면 쪽으로 다가와 15% 더 커 보이면 한 번 찍힘 (작을수록 민감)
+  pushRatio: 0.15,    // [가까이 대고 쭉] 손이 화면 쪽으로 다가와 15% 더 커 보이면 도장 상태 (작을수록 민감)
   grabDist: 120,      // 주먹 쥔 손바닥이 이만큼 가까우면 잡힘
   grabOn: 1.4,        // 손가락 펴진 정도가 이보다 작으면 '주먹'
   grabOff: 1.65,      // 이보다 커지면 '손 폄' → 놓기
@@ -86,7 +86,7 @@ document.addEventListener('fullscreenchange', () => document.body.classList.togg
 let toast = { text: '', until: 0 };
 function setMode(m) {
   SETTINGS.stampMode = m;
-  toast = { text: m === 1 ? '도장 방식 1 · 움직이면 콕콕' : '도장 방식 2 · 화면에 꾹', until: performance.now() / 1000 + 1.8 };
+  toast = { text: m === 1 ? '도장 방식 1 · 움직이면 콕콕' : '도장 방식 2 · 가까이 대고 쭉', until: performance.now() / 1000 + 1.8 };
 }
 
 // ---------- 도장 지우기 버튼 (방식 2) ----------
@@ -210,7 +210,7 @@ const fish = { x: 0, y: 0, vx: S.charSpeed, vy: S.charSpeed * 0.6, face: 1 };
 // 라바콘: (x, y)는 밑받침 바닥 가운데 = 도장 찍히는 면
 const cone = { x: 0, y: 0, vx: 0, vy: 0, heldBy: null, grip: {}, lastStamp: null, look: 'M', pressT: -9,
                hand: null, hvx: 0, hvy: 0, armed: true, lastPushT: -9, resting: false,
-               sizeBase: 0, sizeNow: 0, approach: 0, pressKind: 1 };
+               sizeBase: 0, sizeNow: 0, approach: 0, pressKind: 1, pressing: false };
 const coneW = () => S.coneWidth;
 const coneH = () => S.coneWidth * (coneImg.M ? coneImg.M.height / coneImg.M.width : 0.82);
 let placed = [];   // {x, y, t, img, rot}
@@ -262,7 +262,7 @@ function updateCone(dt, now) {
   const h = coneH();
   // 손을 펴면 놓기 → 손이 움직이던 속도로 던져짐
   if (cone.heldBy && !cone.grip[cone.heldBy]) {
-    cone.heldBy = null;
+    cone.heldBy = null; cone.pressing = false;
     cone.vx = cone.hvx * S.throwPower; cone.vy = cone.hvy * S.throwPower;
     cone.resting = false;
   }
@@ -272,7 +272,7 @@ function updateCone(dt, now) {
     for (const hd of hands) {
       if (cone.grip[hd.id] && Math.hypot(hd.palm.x - bodyX, hd.palm.y - bodyY) < S.grabDist + coneW() * 0.25) {
         cone.heldBy = hd.id; cone.lastStamp = null; cone.hand = null; cone.hvx = cone.hvy = 0; cone.armed = true;
-        cone.sizeBase = cone.sizeNow = hd.size || 0; cone.approach = 0;
+        cone.sizeBase = cone.sizeNow = hd.size || 0; cone.approach = 0; cone.pressing = false;
         break;
       }
     }
@@ -293,7 +293,7 @@ function updateCone(dt, now) {
       if (hd.size) {
         if (!cone.sizeBase) cone.sizeBase = cone.sizeNow = hd.size;
         cone.sizeNow += (hd.size - cone.sizeNow) * 0.5;
-        cone.sizeBase += (cone.sizeNow - cone.sizeBase) * Math.min(1, dt * 1.2);
+        if (!cone.pressing) cone.sizeBase += (cone.sizeNow - cone.sizeBase) * Math.min(1, dt * 1.2);
       }
     }
     if (S.stampMode === 1) {
@@ -303,13 +303,21 @@ function updateCone(dt, now) {
         stampAt(cone.x, cone.y, now); cone.lastStamp = { x: cone.x, y: cone.y };
       }
     } else {
-      // 방식 2: 손을 화면 쪽으로 쑥 내밀 때마다 한 번 (다시 손을 당겨야 다음 도장)
+      // 방식 2: 화면 쪽으로 가까이 대면 '도장 상태' → 그대로 움직이면 쭉 그려지고, 손을 떼면(멀어지면) 해제
       const ratio = cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1;
-      cone.approach = Math.max(0, Math.min(1, (ratio - 1) / S.pushRatio));
-      if (cone.armed && ratio > 1 + S.pushRatio && now - cone.lastPushT > 0.3) {
-        stampAt(cone.x, cone.y - h * 0.5, now, true); cone.armed = false; cone.lastPushT = now;
+      cone.approach = cone.pressing ? 1 : Math.max(0, Math.min(1, (ratio - 1) / S.pushRatio));
+      const sx = cone.x, sy = cone.y - h * 0.5;                // 손이 있는 곳에 찍힘
+      if (!cone.pressing && ratio > 1 + S.pushRatio) {
+        cone.pressing = true; cone.lastStamp = { x: sx, y: sy };
+        stampAt(sx, sy, now, true);                            // 닿는 순간 탁
+      } else if (cone.pressing && ratio < 1 + S.pushRatio * 0.4) {
+        cone.pressing = false; cone.lastStamp = null;          // 멀어지면 해제
+      } else if (cone.pressing) {
+        const ls = cone.lastStamp;
+        if (Math.hypot(sx - ls.x, sy - ls.y) >= S.stampGap) {  // 대고 있는 동안 쭉
+          stampAt(sx, sy, now, false); cone.lastStamp = { x: sx, y: sy };
+        }
       }
-      if (!cone.armed && ratio < 1 + S.pushRatio * 0.3) cone.armed = true;
     }
   } else if (!cone.resting) {
     // 중력 + 계란 벽/바닥 충돌
@@ -348,7 +356,7 @@ function updateCone(dt, now) {
   if (vx < -60) cone.look = 'L'; else if (vx > 60) cone.look = 'R'; else if (Math.abs(vx) < 25) cone.look = 'M';
 }
 
-if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode });
+if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode, pressing: cone.pressing });
 function update(dt, now) {
   updateFish(dt);
   updateCone(dt, now);
@@ -391,7 +399,7 @@ function draw(now) {
     let sx, sy, ay = 0;
     if (cone.pressKind === 2 || (cone.heldBy && S.stampMode === 2)) {
       // 화면 쪽으로 다가올수록 커지고, 찍는 순간 화면에 눌린 듯 퍼짐
-      const grow = 1 + 0.35 * (cone.heldBy ? cone.approach : 0) + 0.25 * k;
+      const grow = 1 + 0.35 * (cone.heldBy ? cone.approach : 0) + 0.12 * k + (cone.pressing ? Math.sin(now * 40) * 0.01 : 0);
       sx = grow * (1 + 0.1 * k); sy = grow * (1 - 0.08 * k); ay = -h * 0.5;   // 몸통 가운데 기준으로 커짐
     } else { sy = 1 - 0.18 * k; sx = 1 + 0.12 * k; }
     ctx.save();
