@@ -2379,6 +2379,9 @@ const SETTINGS = {
   pencilLength: 170,  // [방식 1] 화면에 보이는 색연필 길이(px)
   pokeDist: 150,      // [방식 1] 검지 끝이 새에서 이 거리 안이면 색연필로 바뀜
   slowNear: 320,      // [방식 1] 검지가 이 거리 안으로 오면 새가 느려짐 (잡기 쉽게)
+  fistHold: 0.5,      // [방식 1] 주먹을 이 시간(초) 이상 쥐고 있어야 색연필을 놓음
+  lostHold: 2.0,      // [방식 1] 손이 이 시간(초) 이상 안 보여야 새로 돌아감
+  birdMargin: 0.14,   // [방식 1] 새가 화면 가장자리에서 이 비율만큼 떨어져서 날아다님 (손이 닿게)
   // 접시 윗면(타원) — 라바콘이 올라서는 바닥. 1920×1080 배경 기준
   plate: { cx: 940, cy: 945, a: 760, b: 131 },
   countdown: 3,       // Enter 누르고 찍히기까지(초)
@@ -2602,7 +2605,9 @@ function conePoints(x, y) {
   return { bottom: [x, y], left: [x - w * 0.42, y - h * 0.06], right: [x + w * 0.42, y - h * 0.06], top: [x, y - h * 0.95] };
 }
 
-function dropPencil() {
+let lastDrop = '';
+function dropPencil(why = '') {
+  lastDrop = why;
   fish.pencil = false; fish.owner = null; fish.drawing = false; fish.popT = performance.now() / 1000;
   const a = Math.random() * Math.PI * 2; fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
 }
@@ -2613,7 +2618,7 @@ function updatePencil(dt, now) {
     for (const h of hands) {
       const ix = h.idxExt ?? h.pointing;
       if (h.tip && ix && Math.hypot(h.tip.x - fish.x, h.tip.y - fish.drawY) < S.pokeDist) {
-        fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.popT = now; strokes.push([]);
+        fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.fistT = 0; fish.popT = now; strokes.push([]); lastDrop = '';
         break;
       }
     }
@@ -2623,12 +2628,15 @@ function updatePencil(dt, now) {
   if (!h || !h.tip) {                                          // 손이 안 보이면 잠깐 기다렸다가 새로 돌아감
     fish.drawing = false;
     if (!fish.lostT) fish.lostT = now;
-    if (now - fish.lostT > 1.5) dropPencil();
+    if (now - fish.lostT > S.lostHold) dropPencil('손이 안 보여서 놓음');
     return true;
   }
   fish.lostT = 0; fish.owner = h.id;
   // 주먹 = 검지까지 접고 쥔 상태 (검지만 편 자세는 주먹이 아님)
-  if (!(h.idxExt ?? h.pointing) && h.ratio < S.grabOn) { dropPencil(); return false; }
+  if (!(h.idxExt ?? h.pointing) && h.ratio < S.grabOn) {      // 잠깐 잘못 읽힌 건 무시, 계속 쥐고 있어야 놓음
+    if (!fish.fistT) fish.fistT = now;
+    if (now - fish.fistT > S.fistHold) { dropPencil('주먹 쥐어서 놓음'); return false; }
+  } else fish.fistT = 0;
   fish.x += (h.tip.x - fish.x) * 0.6; fish.y += (h.tip.y - fish.y) * 0.6;
   // 검지를 펴고 있을 때만 그려짐 (손을 다 펴면 펜을 든 상태)
   const was = fish.drawing;
@@ -2654,8 +2662,13 @@ function updateFish(dt) {
   const R = S.charWidth * 0.42;
   if (Math.abs(fish.vx) > 5) fish.face = fish.vx > 0 ? -1 : 1;   // 원본은 왼쪽을 봄
   // 화면 전체를 날아다님: 가장자리에 닿으면 안쪽으로 방향을 틂
-  const mx = S.charWidth * 0.5, my = S.charWidth * 0.4;
+  const mx = Math.max(S.charWidth * 0.5, S.stampMode === 1 ? W * S.birdMargin : 0);
+  const my = Math.max(S.charWidth * 0.4, S.stampMode === 1 ? H * S.birdMargin : 0);
   if (nx > mx && nx < W - mx && ny > my && ny < H - my) { fish.x = nx; fish.y = ny; }
+  else if (fish.x < mx - 2 || fish.x > W - mx + 2 || fish.y < my - 2 || fish.y > H - my + 2) {   // 범위 밖이면 안쪽으로 천천히 돌아옴
+    fish.x += Math.sign(W / 2 - fish.x) * Math.min(Math.abs(W / 2 - fish.x), S.charSpeed * dt);
+    fish.y += Math.sign(H / 2 - fish.y) * Math.min(Math.abs(H / 2 - fish.y), S.charSpeed * dt);
+  }
   else {
     a = Math.atan2(H / 2 - fish.y, W / 2 - fish.x) + (Math.random() - 0.5) * 1.6;
     fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
@@ -2898,6 +2911,8 @@ function draw(now) {
       if (h.tip) { ctx.fillStyle = h.pointing ? '#18ff7a' : h.idxExt ? '#ffd400' : '#ff2626'; ctx.beginPath(); ctx.arc(h.tip.x, h.tip.y, 14, 0, 7); ctx.fill();
         ctx.fillText(h.pointing ? '그리기' : h.idxExt ? '콕 가능' : '검지 접힘', h.tip.x + 18, h.tip.y - 10); }
     }
+    if (S.stampMode === 1 && !fish.pencil) { ctx.save(); ctx.strokeStyle = '#ffd400'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(fish.x, fish.drawY || fish.y, S.pokeDist, 0, 7); ctx.stroke(); ctx.restore(); }
+    if (lastDrop) { ctx.fillStyle = '#ffd400'; ctx.font = '22px sans-serif'; ctx.fillText('마지막: ' + lastDrop, egg.x + 40, egg.y + egg.h - 75); }
     ctx.fillStyle = '#ffffff'; ctx.font = '22px sans-serif';
     ctx.fillText(`도장 방식 ${S.stampMode} · 다가옴 ${(cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1).toFixed(2)} (찍힘 ${(1 + S.pushRatio).toFixed(2)})`, egg.x + 40, egg.y + egg.h - 40);
   }
