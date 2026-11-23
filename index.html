@@ -32,6 +32,8 @@
   #shotPanel canvas.qr { width: 200px; height: 200px; background: #fff; border-radius: 10px; padding: 10px; image-rendering: pixelated; }
   #shotPanel .big { font-size: 20px; font-weight: 800; }
   #shotPanel .small { font-size: 14px; font-weight: 500; opacity: .85; margin-top: 6px; }
+  #shotPanel .notice { font-size: 12px; font-weight: 400; opacity: .6; line-height: 1.5; max-width: 36ch; text-wrap: balance; word-break: keep-all; }
+  #shotPanel { word-break: keep-all; }
   @keyframes slidein { from { transform: translate(40px, -50%); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { #shotPanel { animation: none; } }
 </style>
@@ -43,6 +45,7 @@
 <div id="shotPanel" hidden>
   <img id="shotImg" alt="방금 찍은 사진">
   <div id="shotMsg">사진을 올리는 중…</div>
+  <div class="notice">사진은 QR코드 생성을 위해서만 저장되며, 전시 기간이 끝나면 모두 폐기됩니다.</div>
 </div>
 
 <script>//---------------------------------------------------------------------
