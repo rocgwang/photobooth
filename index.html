@@ -2366,7 +2366,9 @@ const SETTINGS = {
   stampSize: 83,      // 스탬프 크기(px)
   stampGap: 66,       // 이만큼 움직일 때마다 하나씩 찍힘
   stampTilt: 20,      // 랜덤 기울기 최대 각도
-  stampLife: 5,       // 스탬프 사라지는 시간(초)
+  stampLife: 5,       // [방식 1] 색연필 선이 사라지는 시간(초)
+  penColor: '#188653', // [방식 1] 색연필 색
+  penWidth: 12,       // [방식 1] 색연필 굵기(px)
   countdown: 3,       // Enter 누르고 찍히기까지(초)
   cloudName: 'aajguyhj',          // Cloudinary Cloud name
   uploadPreset: 'ATC 대외협력',    // Cloudinary upload preset (Unsigned)
@@ -2414,13 +2416,14 @@ document.addEventListener('fullscreenchange', () => document.body.classList.togg
 let toast = { text: '', until: 0 };
 function setMode(m) {
   SETTINGS.stampMode = m;
-  toast = { text: m === 1 ? '도장 방식 1 · 움직이면 콕콕' : '도장 방식 2 · 화면에 꾹', until: performance.now() / 1000 + 1.8 };
+  toast = { text: m === 1 ? '방식 1 · 색연필' : '방식 2 · 도장 꾹', until: performance.now() / 1000 + 1.8 };
 }
 
 // ---------- 도장 지우기 버튼 (방식 2) ----------
 const CLEAR_BTN = { x: 1650, y: 992, w: 230, h: 68 };   // 1920 화면 기준 위치·크기
 let clearPressT = -9;
 function clearStamps() {
+  strokes = [];
   const now = performance.now() / 1000;
   for (const p of placed) if (!p.clearT) p.clearT = now;
   clearPressT = now;
@@ -2542,6 +2545,7 @@ const cone = { x: 0, y: 0, vx: 0, vy: 0, heldBy: null, grip: {}, lastStamp: null
 const coneW = () => S.coneWidth;
 const coneH = () => S.coneWidth * (coneImg.M ? coneImg.M.height / coneImg.M.width : 0.82);
 let placed = [];   // {x, y, t, img, rot}
+let strokes = [];  // 색연필 획: [{x, y, t, j}, ...]
 let seqI = 0;
 
 function stampAt(x, y, now, pop = false, at = now) {
@@ -2610,7 +2614,7 @@ function updateCone(dt, now) {
     const bodyX = cone.x, bodyY = cone.y - h * 0.5;
     for (const hd of hands) {
       if (cone.grip[hd.id] && Math.hypot(hd.palm.x - bodyX, hd.palm.y - bodyY) < S.grabDist + coneW() * 0.25) {
-        cone.heldBy = hd.id; cone.lastStamp = null; cone.hand = null; cone.hvx = cone.hvy = 0; cone.armed = true;
+        cone.heldBy = hd.id; cone.lastStamp = null; strokes.push([]); cone.hand = null; cone.hvx = cone.hvy = 0; cone.armed = true;
         cone.sizeBase = cone.sizeNow = hd.size || 0; cone.approach = 0; cone.pressing = false;
         break;
       }
@@ -2636,11 +2640,13 @@ function updateCone(dt, now) {
       }
     }
     if (S.stampMode === 1) {
-      // 방식 1: 움직이면 일정 간격마다 콕
-      const ls = cone.lastStamp;
-      if (!ls || Math.hypot(cone.x - ls.x, cone.y - ls.y) >= S.stampGap) {
-        stampAt(cone.x, cone.y, now); cone.lastStamp = { x: cone.x, y: cone.y };
-      }
+      // 방식 1: 라바콘 밑면이 색연필 끝 → 지나간 길에 선이 그려짐
+      if (!strokes.length) strokes.push([]);
+      const s = strokes[strokes.length - 1], last = s[s.length - 1];
+      if (last && Math.hypot(cone.x - last.x, cone.y - last.y) > 150) strokes.push([]);   // 순간이동한 구간은 잇지 않음
+      if (inEgg(cone.x, cone.y) && (!last || Math.hypot(cone.x - last.x, cone.y - last.y) > 3)) {
+        strokes[strokes.length - 1].push({ x: cone.x, y: cone.y, t: now, j: Math.random() });
+      } else if (!inEgg(cone.x, cone.y) && last) strokes.push([]);   // 계란 밖으로 나가면 끊김
     } else {
       // 방식 2: 손을 화면 쪽으로 쑥 내밀 때마다 카메라 전체에 3~5개 (다시 손을 당겨야 다음 도장)
       const ratio = cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1;
@@ -2693,6 +2699,8 @@ function update(dt, now) {
   updateFish(dt);
   updateCone(dt, now);
   placed = placed.filter(p => p.clearT ? now - p.clearT < 0.35 : (p.keep || now - p.t < S.stampLife));
+  for (const s of strokes) while (s.length && now - s[0].t > S.stampLife) s.shift();
+  strokes = strokes.filter((s, i) => s.length || i === strokes.length - 1);
 }
 
 // ---------- 그리기 ----------
@@ -2705,6 +2713,22 @@ function draw(now) {
   } else {
     ctx.fillStyle = '#0a3823'; ctx.fillRect(egg.x, egg.y, egg.w, egg.h);
   }
+  // 색연필: 진한 선 + 결이 보이게 얇은 선 두 겹 (마지막 0.6초 동안 스르륵 사라짐)
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = S.penColor;
+  for (const s of strokes) {
+    for (let i = 1; i < s.length; i++) {
+      const a = s[i - 1], b = s[i], age = now - b.t, life = S.stampLife;
+      const fade = age < life - 0.6 ? 1 : Math.max(0, (life - age) / 0.6);
+      const passes = [[0, 0, S.penWidth, 0.85], [2.2, -1.5, S.penWidth * 0.45, 0.35], [-2, 1.8, S.penWidth * 0.35, 0.3]];
+      for (const [ox, oy, w, al] of passes) {
+        const jx = (b.j - 0.5) * 1.6;
+        ctx.globalAlpha = al * fade; ctx.lineWidth = w;
+        ctx.beginPath(); ctx.moveTo(a.x + ox, a.y + oy); ctx.lineTo(b.x + ox + jx, b.y + oy - jx); ctx.stroke();
+      }
+    }
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+
   for (const p of placed) {                                 // 스탬프
     const age = now - p.t, life = S.stampLife;
     if (age < 0) continue;
