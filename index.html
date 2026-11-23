@@ -2859,6 +2859,18 @@ function drawShotUI(now) {
       ctx.strokeText(String(n), egg.cx, egg.cy); ctx.fillText(String(n), egg.cx, egg.cy);
       ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     }
+    // 찍기 전에 미리 안내 (사진에는 안 담김)
+    const lines = ['사진은 QR코드 생성을 위해서만 저장되며,', '전시 기간이 끝나면 모두 폐기됩니다.'];
+    ctx.save();
+    ctx.font = '600 30px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    const bw = Math.max(...lines.map(l => ctx.measureText(l).width)) + 72, bh = 112;
+    const bx = egg.cx - bw / 2, by = egg.y + egg.h - bh - 70;
+    ctx.globalAlpha = Math.min(1, (now - shot.start) / 0.25);
+    ctx.fillStyle = 'rgba(10,56,35,0.88)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 24); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(lines[0], egg.cx, by + bh / 2 - 20); ctx.fillText(lines[1], egg.cx, by + bh / 2 + 22);
+    ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
   }
   const fl = 1 - (now - flashT) / 0.35;                   // 찰칵 (하얀 번쩍)
   if (fl > 0) { ctx.save(); ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
