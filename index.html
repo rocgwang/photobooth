@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>일상처방 포토부스</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap">
 <style>
   :root { --bg: #e8f3ee; --ink: #0a3823; --green: #188653; }
   html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
@@ -20,34 +19,26 @@
   }
   body.full #help { display: none; }
   video { display: none; }
-  #receipt {
+  #shotPanel {
     position: fixed; top: 50%; right: 3vw; transform: translateY(-50%);
-    display: grid; gap: 12px; justify-items: center;
-    padding: 18px; border-radius: 18px; background: rgba(10,56,35,.92);
+    display: grid; gap: 12px; justify-items: center; max-width: 34vw;
+    padding: 18px; border-radius: 18px; background: rgba(10,56,35,.92); color: #e8f3ee;
     box-shadow: 0 20px 60px rgba(0,0,0,.35); animation: slidein .35s ease-out;
+    font: 600 16px -apple-system, "Apple SD Gothic Neo", sans-serif; text-align: center;
   }
-  #receipt[hidden] { display: none; }
-  #receipt img { width: min(300px, 26vw); height: auto; max-height: 80vh; object-fit: contain; image-rendering: pixelated; background: #fff; }
-  #receipt .row { display: flex; gap: 8px; }
-  #receipt button {
-    font: 600 15px -apple-system, "Apple SD Gothic Neo", sans-serif; padding: 8px 16px;
-    border: 0; border-radius: 999px; cursor: pointer; background: #e8f3ee; color: #0a3823;
-  }
-  #receipt button:focus-visible { outline: 3px solid #95c7b0; }
+  #shotPanel[hidden] { display: none; }
+  #shotPanel img { width: 100%; border-radius: 10px; }
   @keyframes slidein { from { transform: translate(40px, -50%); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { #receipt { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { #shotPanel { animation: none; } }
 </style>
 </head>
 <body>
 <canvas id="stage" width="1920" height="1080"></canvas>
 <video id="cam" playsinline muted></video>
 <div id="status">카메라와 손 인식을 준비하는 중…</div>
-<div id="receipt" hidden>
-  <img id="receiptImg" alt="영수증 미리보기">
-  <div class="row">
-    <button id="receiptSave" type="button">PNG 저장</button>
-    <button id="receiptClose" type="button">닫기</button>
-  </div>
+<div id="shotPanel" hidden>
+  <img id="shotImg" alt="방금 찍은 사진">
+  <div id="shotMsg">QR코드 저장은 사진 올릴 곳을 연결하면 여기에 나와요</div>
 </div>
 
 <script type="module">
@@ -71,10 +62,7 @@ const SETTINGS = {
   stampGap: 66,       // 이만큼 움직일 때마다 하나씩 찍힘
   stampTilt: 20,      // 랜덤 기울기 최대 각도
   stampLife: 5,       // 스탬프 사라지는 시간(초)
-  countdown: 3,       // 촬영 전 카운트다운(초)
-  receiptTitle: '2026 ATC × 일상처방',
-  receiptSub: '레시피 바꾸지 말 것 *',
-  receiptFooter: '오늘의 처방, 잘 받아 가세요',
+  countdown: 3,       // Enter 누르고 찍히기까지(초)
   stampOrder: [1,7,2,8,5,9,3,10,6,11,4,14,12,13],  // 찍히는 순서(파일 번호)
 };
 // ===============================================================
@@ -111,7 +99,7 @@ addEventListener('keydown', e => {
   if (c === 'Digit1' || c === 'Numpad1') setMode(1);
   if (c === 'Digit2' || c === 'Numpad2') setMode(2);
   if (c === 'KeyC') clearStamps();
-  if (c === 'KeyP') startShot();
+  if (c === 'Enter' || c === 'NumpadEnter') startShot();
 });
 document.addEventListener('fullscreenchange', () => document.body.classList.toggle('full', !!document.fullscreenElement));
 
@@ -134,10 +122,8 @@ const toStage = e => {
   return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
 };
 const onBtn = p => SETTINGS.stampMode === 2 && p.x >= CLEAR_BTN.x && p.x <= CLEAR_BTN.x + CLEAR_BTN.w && p.y >= CLEAR_BTN.y && p.y <= CLEAR_BTN.y + CLEAR_BTN.h;
-const SHOT_BTN = { x: 1650, y: 910, w: 230, h: 68 };          // 영수증 뽑기 버튼
-const onShot = p => p.x >= SHOT_BTN.x && p.x <= SHOT_BTN.x + SHOT_BTN.w && p.y >= SHOT_BTN.y && p.y <= SHOT_BTN.y + SHOT_BTN.h;
-stage.addEventListener('pointerdown', e => { const p = toStage(e); if (onBtn(p)) clearStamps(); else if (onShot(p)) startShot(); });
-stage.addEventListener('pointermove', e => { const p = toStage(e); stage.style.cursor = onBtn(p) || onShot(p) ? 'pointer' : 'default'; });
+stage.addEventListener('pointerdown', e => { if (onBtn(toStage(e))) clearStamps(); });
+stage.addEventListener('pointermove', e => { stage.style.cursor = onBtn(toStage(e)) ? 'pointer' : 'default'; });
 
 const loadImg = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
 
@@ -254,7 +240,7 @@ function stampAt(x, y, now, pop = false, at = now) {
   if (!inEgg(x, y)) return;
   const order = S.stampOrder.map(n => n - 1).filter(i => i >= 0 && i < stamps.length);
   const idx = order.length ? order[seqI++ % order.length] : 0;
-  placed.push({ x, y, t: at, img: stamps[idx], idx, pop, keep: S.stampMode === 2, clearT: 0, rot: (Math.random() * 2 - 1) * S.stampTilt * Math.PI / 180 });
+  placed.push({ x, y, t: at, img: stamps[idx], pop, keep: S.stampMode === 2, clearT: 0, rot: (Math.random() * 2 - 1) * S.stampTilt * Math.PI / 180 });
   cone.pressT = now; cone.pressKind = pop ? 2 : 1;                                         // 꾹 누르는 모션
 }
 
@@ -394,7 +380,6 @@ function updateCone(dt, now) {
 }
 
 if (location.hash === '#test') window.__fish = () => ({ x: fish.x, y: fish.y, inEgg: inEgg(fish.x, fish.y) });
-if (location.hash === '#test') window.__shot = () => startShot();
 if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode, pressing: cone.pressing });
 function update(dt, now) {
   updateFish(dt);
@@ -487,167 +472,30 @@ function draw(now) {
   }
 }
 
-// ---------- 촬영 → 영수증 (80mm 감열지 = 가로 576px, 흑백) ----------
-const RW = 576;
-const STAMP_NAMES = ['타르트', '포크', '거품기', '손 날개 달걀', '정어리 달걀', '달걀 프라이', '별 달걀', '별 달걀', '별 달걀', '별 달걀', '별 달걀', '깃털 날개 달걀', '거품기', '포크'];
-const SERIF = '"MaruBuri", "Nanum Myeongjo", "AppleMyungjo", serif';
-let shot = null;            // { start }
-let flashT = -9;
-let orderNo = 1;
-try { orderNo = (parseInt(localStorage.getItem('booth_order') || '0', 10) || 0) + 1; } catch {}
-
+// ---------- Enter → 3초 뒤 촬영 ----------
+let shot = null, flashT = -9, lastPhoto = null;
 function startShot() {
   if (shot) return;
-  document.getElementById('receipt').hidden = true;
+  document.getElementById('shotPanel').hidden = true;
   shot = { start: performance.now() / 1000 };
 }
-
-let eggMaskCanvas = null;
-function eggMask() {                                      // 계란 모양 (흰색) 캔버스, 한 번만 만듦
-  if (eggMaskCanvas) return eggMaskCanvas;
-  const c = document.createElement('canvas'); c.width = egg.w; c.height = egg.h;
-  const g = c.getContext('2d'), id = g.createImageData(egg.w, egg.h);
-  for (let y = 0; y < egg.h; y++) for (let x = 0; x < egg.w; x++)
-    if (mask[(y + egg.y) * W + x + egg.x]) { const i = (y * egg.w + x) * 4; id.data[i] = id.data[i + 1] = id.data[i + 2] = id.data[i + 3] = 255; }
-  g.putImageData(id, 0, 0);
-  return eggMaskCanvas = c;
-}
-
-function captureEgg() {                                   // 지금 화면에서 계란 부분만 오려냄
-  const c = document.createElement('canvas'); c.width = egg.w; c.height = egg.h;
-  const g = c.getContext('2d');
-  g.drawImage(stage, egg.x, egg.y, egg.w, egg.h, 0, 0, egg.w, egg.h);
-  g.globalCompositeOperation = 'destination-in'; g.drawImage(eggMask(), 0, 0);
-  return c;
-}
-
-function stampTally() {                                   // 화면에 있는 도장 종류별 개수
-  const tally = new Map();
-  const now = performance.now() / 1000;
-  for (const p of placed) {
-    if (p.clearT || now < p.t) continue;
-    const name = STAMP_NAMES[p.idx] || '도장';
-    if (!tally.has(name)) tally.set(name, { n: 0, img: p.img });
-    tally.get(name).n++;
-  }
-  return [...tally.entries()].map(([name, v]) => ({ name, ...v }));
-}
-
-function ditherAtkinson(c) {                              // 감열지용 흑백 점묘
-  const g = c.getContext('2d'), id = g.getImageData(0, 0, c.width, c.height), d = id.data;
-  const w = c.width, h = c.height, L = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const a = d[i * 4 + 3] / 255;
-    L[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) * a + 255 * (1 - a);
-  }
-  const push = (x, y, e) => { if (x >= 0 && x < w && y < h) L[y * w + x] += e; };
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x, old = L[i], v = old < 128 ? 0 : 255, e = (old - v) / 8;
-    L[i] = v;
-    push(x + 1, y, e); push(x + 2, y, e); push(x - 1, y + 1, e); push(x, y + 1, e); push(x + 1, y + 1, e); push(x, y + 2, e);
-  }
-  for (let i = 0; i < w * h; i++) { d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = L[i]; d[i * 4 + 3] = 255; }
-  g.putImageData(id, 0, 0);
-}
-
-function makeReceipt(photo) {
-  const pad = 28, inner = RW - pad * 2;
-  const items = stampTally(), total = items.reduce((a, b) => a + b.n, 0);
-  const photoH = Math.round(photo.height * inner / photo.width);
-  const lineH = 34;
-  const H = 200 + 92 + 50 + 34 + 30 + 40 + photoH + 36 + 44 + Math.max(1, items.length) * lineH + 26 + 50 + 30 + (items.length ? 84 : 0) + 60 + 40 + 40;
-  const c = document.createElement('canvas'); c.width = RW; c.height = H;
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff'; g.fillRect(0, 0, RW, H);
-  g.fillStyle = '#000'; g.strokeStyle = '#000';
-  const text = (s, x, y, size, weight = 400, align = 'left') => { g.font = `${weight} ${size}px ${SERIF}`; g.textAlign = align; g.fillText(s, x, y); };
-  const dashed = y => { g.setLineDash([8, 6]); g.lineWidth = 2; g.beginPath(); g.moveTo(pad, y); g.lineTo(RW - pad, y); g.stroke(); g.setLineDash([]); };
-  const leader = (l, r, y, size, weight = 400) => {
-    g.font = `${weight} ${size}px ${SERIF}`; g.textAlign = 'left'; g.fillText(l, pad, y);
-    const lw = g.measureText(l).width; g.textAlign = 'right'; g.fillText(r, RW - pad, y);
-    const rw = g.measureText(r).width;
-    g.textAlign = 'left'; g.font = `400 ${size}px ${SERIF}`;
-    let dots = ''; while (g.measureText(dots + '·').width < inner - lw - rw - 24) dots += '·';
-    g.fillText(dots, pad + lw + 12, y);
-  };
-  const d = new Date(), z = n => String(n).padStart(2, '0');
-  const date = `${d.getFullYear()}.${z(d.getMonth() + 1)}.${z(d.getDate())}  ${z(d.getHours())}:${z(d.getMinutes())}`;
-
-  let y = 40;
-  // 로고 (배경 왼쪽 위 ATC 로고)
-  const logo = { x: 60, y: 55, w: 270, h: 160 };
-  const lw = 230, lh = lw * logo.h / logo.w;
-  g.drawImage(bgCut, logo.x, logo.y, logo.w, logo.h, (RW - lw) / 2, y - 16, lw, lh); y += lh + 30;
-  text(S.receiptTitle, RW / 2, y, 32, 800, 'center'); y += 34;
-  text(S.receiptSub, RW / 2, y, 22, 400, 'center'); y += 28;
-  dashed(y); y += 34;
-  leader(`No. ${String(orderNo).padStart(4, '0')}`, date, y, 20); y += 30;
-  // 사진 (계란 모양 + 테두리)
-  g.save(); g.translate(pad, y);
-  const sc = inner / photo.width;
-  g.scale(sc, sc);
-  g.filter = 'contrast(1.2) brightness(1.12)';
-  g.drawImage(photo, 0, 0); g.filter = 'none';
-  g.restore();
-  const m = document.createElement('canvas'); m.width = inner + 12; m.height = photoH + 12;   // 계란 테두리
-  const mg = m.getContext('2d'); mg.drawImage(eggMask(), 0, 0, m.width, m.height);
-  mg.globalCompositeOperation = 'destination-out'; mg.drawImage(eggMask(), 6, 6, inner, photoH);
-  mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#000'; mg.fillRect(0, 0, m.width, m.height);
-  g.drawImage(m, pad - 6, y - 6);
-  y += photoH + 36;
-  dashed(y); y += 40;
-  text('오늘의 처방', pad, y, 26, 800); y += 40;
-  if (!items.length) { leader('찍은 도장', '없음', y, 22); y += lineH; }
-  for (const it of items) { leader(it.name, `× ${it.n}`, y, 22); y += lineH; }
-  y += 4; dashed(y); y += 40;
-  leader('TOTAL', `도장 ${total}개`, y, 26, 800); y += 30;
-  if (items.length) {                                     // 찍은 도장 아이콘 한 줄
-    const icons = items.slice(0, 7), s = 60, gap = 10, w0 = icons.length * s + (icons.length - 1) * gap;
-    icons.forEach((it, i) => g.drawImage(it.img, (RW - w0) / 2 + i * (s + gap), y + 8, s, s));
-    y += 84;
-  }
-  y += 24; text(S.receiptFooter, RW / 2, y, 22, 700, 'center'); y += 30;
-  text('· · ·  ✂  · · ·', RW / 2, y + 10, 18, 400, 'center'); y += 40;
-  const out = document.createElement('canvas'); out.width = RW; out.height = Math.min(H, Math.ceil(y));   // 내용 길이에 맞게 자름
-  out.getContext('2d').drawImage(c, 0, 0);
-  ditherAtkinson(out);
-  return out;
-}
-
 function finishShot() {
-  const photo = captureEgg();
+  // 지금 화면 전체(배경 + 카메라 + 도장 + 캐릭터)를 사진으로
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  c.getContext('2d').drawImage(stage, 0, 0);
   flashT = performance.now() / 1000;
-  const r = makeReceipt(photo);
-  const url = r.toDataURL('image/png');
-  const panel = document.getElementById('receipt');
-  document.getElementById('receiptImg').src = url;
-  panel.dataset.no = String(orderNo).padStart(4, '0');
-  panel.hidden = false;
-  try { localStorage.setItem('booth_order', String(orderNo)); } catch {}
-  orderNo++;
-  clearTimeout(finishShot.timer);
-  finishShot.timer = setTimeout(() => { panel.hidden = true; }, 15000);
-  window.__lastReceipt = url;
+  c.toBlob(blob => {
+    lastPhoto = blob;
+    document.getElementById('shotImg').src = URL.createObjectURL(blob);
+    const panel = document.getElementById('shotPanel');
+    panel.hidden = false;
+    clearTimeout(finishShot.timer);
+    finishShot.timer = setTimeout(() => { panel.hidden = true; }, 15000);
+    window.__lastShot = blob;
+  }, 'image/jpeg', 0.9);
 }
-document.getElementById('receiptClose').addEventListener('click', () => { document.getElementById('receipt').hidden = true; });
-document.getElementById('receiptSave').addEventListener('click', () => {
-  const a = document.createElement('a');
-  a.href = document.getElementById('receiptImg').src;
-  a.download = `일상처방_${document.getElementById('receipt').dataset.no || ''}.png`;
-  document.body.appendChild(a); a.click(); a.remove();
-});
-
 function drawShotUI(now) {
-  // 영수증 뽑기 버튼
-  const b = SHOT_BTN;
-  ctx.save(); ctx.globalAlpha = shot ? 0.55 : 1;
-  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#115f3b'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, b.h / 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#115f3b'; ctx.font = '700 30px -apple-system, "Apple SD Gothic Neo", sans-serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('영수증 뽑기', b.x + b.w / 2, b.y + b.h / 2 + 2);
-  ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-  // 카운트다운
-  if (shot) {
+  if (shot) {                                             // 3, 2, 1
     const left = S.countdown - (now - shot.start);
     if (left > 0) {
       const n = Math.ceil(left), f = left - Math.floor(left);
@@ -659,8 +507,7 @@ function drawShotUI(now) {
       ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     }
   }
-  // 찰칵 (하얀 번쩍)
-  const fl = 1 - (now - flashT) / 0.35;
+  const fl = 1 - (now - flashT) / 0.35;                   // 찰칵 (하얀 번쩍)
   if (fl > 0) { ctx.save(); ctx.globalAlpha = fl * 0.85; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
 
@@ -669,7 +516,7 @@ function loop() {
   const now = performance.now() / 1000;
   const dt = Math.min(now - prev, 0.1); prev = now;
   detectHands(); update(dt, now); draw(now);
-  if (shot && now - shot.start >= S.countdown) { shot = null; finishShot(); }
+  if (shot && now - shot.start >= S.countdown) { shot = null; finishShot(); }   // 숫자·번쩍임 그리기 전에 찍음
   drawShotUI(now);
   requestAnimationFrame(loop);
 }
@@ -677,7 +524,6 @@ function loop() {
 // ---------- 시작 ----------
 (async () => {
   await Promise.all([prepareBackground(), prepareStamps()]);
-  for (const w of [400, 700, 800]) document.fonts?.load(`${w} 24px "Nanum Myeongjo"`).catch(() => {});
   fish.x = egg.cx - egg.w * 0.2; fish.y = egg.cy - egg.h * 0.15;
   cone.x = egg.cx + egg.w * 0.15; cone.y = egg.cy;   // 가운데쯤에서 떨어지며 시작
   loop();
