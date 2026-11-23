@@ -2489,6 +2489,7 @@ async function prepareBackground() {
   for (let x = 0; x < W; x++) { let fy = 0; for (let y = H - 1; y >= 0; y--) if (m[y * W + x]) { fy = y; break; } floorY[x] = fy; }
   egg = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
 }
+const onScreen = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
 const inEgg = (x, y) => {
   x = Math.round(x); y = Math.round(y);
   return x >= 0 && y >= 0 && x < W && y < H && mask[y * W + x] === 1;
@@ -2578,7 +2579,7 @@ let strokes = [];  // 색연필 획: [{x, y, t, j}, ...]
 let seqI = 0;
 
 function stampAt(x, y, now, pop = false, at = now) {
-  if (!inEgg(x, y)) return;
+  if (!onScreen(x, y)) return;
   const order = S.stampOrder.map(n => n - 1).filter(i => i >= 0 && i < stamps.length);
   const idx = order.length ? order[seqI++ % order.length] : 0;
   placed.push({ x, y, t: at, img: stamps[idx], pop, keep: S.stampMode === 2, clearT: 0, rot: (Math.random() * 2 - 1) * S.stampTilt * Math.PI / 180 });
@@ -2592,7 +2593,7 @@ function scatterStamps(now, cx, cy) {
   for (let tries = 0; pts.length < n && tries < 600; tries++) {
     const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * S.scatterRadius;
     const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
-    if (![[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dy]) => inEgg(x + dx, y + dy))) continue;
+    if (![[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dy]) => onScreen(x + dx, y + dy))) continue;
     if (pts.some(p => Math.hypot(p.x - x, p.y - y) < S.stampSize * (tries < 300 ? 1.1 : 0.8))) continue;
     pts.push({ x, y });
   }
@@ -2645,7 +2646,7 @@ function updatePencil(dt, now) {
   // 검지를 펴고 있을 때만 그려짐 (손을 다 펴면 펜을 든 상태)
   const was = fish.drawing;
   if (h.pointing) fish.pointT = now;
-  fish.drawing = (now - (fish.pointT || 0) < 0.2) && now - fish.popT > 0.3 && inEgg(fish.x, fish.y);   // 잠깐 끊겨도 선이 안 끊기게
+  fish.drawing = (now - (fish.pointT || 0) < 0.2) && now - fish.popT > 0.3 && onScreen(fish.x, fish.y);   // 잠깐 끊겨도 선이 안 끊기게
   if (fish.drawing) {
     if (!was || !strokes.length) strokes.push([]);
     const s = strokes[strokes.length - 1], last = s[s.length - 1];
@@ -2823,6 +2824,9 @@ function draw(now) {
   } else {
     ctx.fillStyle = '#0a3823'; ctx.fillRect(egg.x, egg.y, egg.w, egg.h);
   }
+  ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
+
+  // 색연필 선과 도장: 배경 위에 그려서 계란 밖에서도 보임
   // 색연필: 진한 선 + 결이 보이게 얇은 선 두 겹 (마지막 0.6초 동안 스르륵 사라짐)
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = S.penColor;
   for (const s of strokes) {
@@ -2851,7 +2855,6 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
 
-  ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
 
   const img = coneImg[cone.look] || coneImg.M;              // 라바콘 (배경 위, 화면 어디든)
   if (img) {
