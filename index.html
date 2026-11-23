@@ -2376,6 +2376,10 @@ const SETTINGS = {
   stampLife: 5,       // [방식 1] 색연필 선이 사라지는 시간(초)
   penColor: '#188653', // [방식 1] 색연필 색
   penWidth: 12,       // [방식 1] 색연필 굵기(px)
+  pencilLength: 170,  // [방식 1] 화면에 보이는 색연필 길이(px)
+  pokeDist: 90,       // [방식 1] 검지 끝이 새에서 이 거리 안이면 색연필로 바뀜
+  // 접시 윗면(타원) — 라바콘이 올라서는 바닥. 1920×1080 배경 기준
+  plate: { cx: 940, cy: 945, a: 760, b: 131 },
   countdown: 3,       // Enter 누르고 찍히기까지(초)
   cloudName: 'aajguyhj',          // Cloudinary Cloud name
   uploadPreset: 'ATC 대외협력',    // Cloudinary upload preset (Unsigned)
@@ -2427,6 +2431,8 @@ document.addEventListener('fullscreenchange', () => document.body.classList.togg
 let toast = { text: '', until: 0 };
 function setMode(m) {
   SETTINGS.stampMode = m;
+  if (m !== 1 && fish.pencil) dropPencil();                   // 방식 2에선 새는 그냥 날아다님
+  if (m !== 2 && cone.heldBy) { cone.heldBy = null; cone.resting = false; cone.vx = cone.vy = 0; }   // 방식 1에선 라바콘을 못 잡음
   toast = { text: m === 1 ? '방식 1 · 색연필' : '방식 2 · 도장 꾹', until: performance.now() / 1000 + 1.8 };
 }
 
@@ -2541,14 +2547,18 @@ function detectHands() {
     const side = (res.handedness?.[i]?.[0]?.categoryName) || ('h' + i);
     const pi = P(5), pk = P(17);
     const size = (Math.hypot(wr.x - pi.x, wr.y - pi.y) + Math.hypot(wr.x - pk.x, wr.y - pk.y) + Math.hypot(pi.x - pk.x, pi.y - pk.y)) / 3;
-    return { id: side, ratio, palm, size, pts: lm.map((_, k) => P(k)) };
+    // 검지만 편 자세(가리키기): 검지는 펴고 나머지 세 손가락은 접힘
+    const tip = P(8), dIdx = Math.hypot(tip.x - wr.x, tip.y - wr.y) / hs;
+    const dRest = [12, 16, 20].map(P).reduce((a, t) => a + Math.hypot(t.x - wr.x, t.y - wr.y), 0) / 3 / hs;
+    const pointing = dIdx > 1.55 && dRest < 1.45;
+    return { id: side, ratio, palm, size, tip, pointing, pts: lm.map((_, k) => P(k)) };
   });
 }
 
 // ---------- 물고기 · 라바콘 · 스탬프 상태 ----------
 const S = SETTINGS;
 // 물고기: 계속 날아다니기만 함 (잡히지 않음)
-const fish = { x: 0, y: 0, vx: S.charSpeed, vy: S.charSpeed * 0.6, face: 1 };
+const fish = { x: 0, y: 0, vx: S.charSpeed, vy: S.charSpeed * 0.6, face: 1, pencil: false, owner: null, lostT: 0, drawing: false, popT: -9 };
 // 라바콘: (x, y)는 밑받침 바닥 가운데 = 도장 찍히는 면
 const cone = { x: 0, y: 0, vx: 0, vy: 0, heldBy: null, grip: {}, lastStamp: null, look: 'M', pressT: -9,
                hand: null, hvx: 0, hvy: 0, armed: true, lastPushT: -9, resting: false,
@@ -2587,6 +2597,45 @@ function conePoints(x, y) {
   return { bottom: [x, y], left: [x - w * 0.42, y - h * 0.06], right: [x + w * 0.42, y - h * 0.06], top: [x, y - h * 0.95] };
 }
 
+function dropPencil() {
+  fish.pencil = false; fish.owner = null; fish.drawing = false; fish.popT = performance.now() / 1000;
+  const a = Math.random() * Math.PI * 2; fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
+}
+function updatePencil(dt, now) {
+  if (!fish.pencil) {
+    if (S.stampMode !== 1) return false;
+    // 검지로 새를 콕 → 색연필
+    for (const h of hands) {
+      if (h.tip && h.pointing && Math.hypot(h.tip.x - fish.x, h.tip.y - fish.y) < S.pokeDist) {
+        fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.popT = now; strokes.push([]);
+        break;
+      }
+    }
+    return fish.pencil;
+  }
+  const h = hands.find(x => x.id === fish.owner) || (hands.length === 1 ? hands[0] : null);
+  if (!h || !h.tip) {                                          // 손이 안 보이면 잠깐 기다렸다가 새로 돌아감
+    fish.drawing = false;
+    if (!fish.lostT) fish.lostT = now;
+    if (now - fish.lostT > 1.5) dropPencil();
+    return true;
+  }
+  fish.lostT = 0; fish.owner = h.id;
+  if (h.ratio < S.grabOn) { dropPencil(); return false; }      // 주먹 쥐면 색연필을 놓음
+  fish.x += (h.tip.x - fish.x) * 0.6; fish.y += (h.tip.y - fish.y) * 0.6;
+  // 검지를 펴고 있을 때만 그려짐 (손을 다 펴면 펜을 든 상태)
+  const was = fish.drawing;
+  fish.drawing = h.pointing && inEgg(fish.x, fish.y);
+  if (fish.drawing) {
+    if (!was || !strokes.length) strokes.push([]);
+    const s = strokes[strokes.length - 1], last = s[s.length - 1];
+    if (last && Math.hypot(fish.x - last.x, fish.y - last.y) > 150) strokes.push([]);
+    if (!last || Math.hypot(fish.x - last.x, fish.y - last.y) > 3)
+      strokes[strokes.length - 1].push({ x: fish.x, y: fish.y, t: now, j: Math.random() });
+  }
+  return true;
+}
+
 function updateFish(dt) {
   let a = Math.atan2(fish.vy, fish.vx) + (Math.random() * 3 - 1.5) * dt;
   fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
@@ -2601,6 +2650,22 @@ function updateFish(dt) {
     fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
     fish.x = Math.min(W - mx, Math.max(mx, fish.x)); fish.y = Math.min(H - my, Math.max(my, fish.y));
   }
+}
+
+// 접시 윗면 높이 (x에서). 접시 밖이면 화면 바닥
+function plateTop(x) {
+  const P = S.plate, u = (x - P.cx) / P.a;
+  if (Math.abs(u) >= 1) return H;
+  const rim = P.cy - P.b * Math.sqrt(1 - u * u);
+  // 계란이 가리는 곳은 계란 밑동 바로 앞(접시 위)에 서도록
+  const eb = floorY ? floorY[Math.max(0, Math.min(W - 1, Math.round(x)))] : 0;
+  return eb ? Math.min(H, Math.max(rim, eb + 22)) : rim;
+}
+// 라바콘 밑받침이 닿는 높이 = 밑받침 폭 안에서 가장 높은 접시 면
+function coneFloor(x) {
+  const w = coneW(); let m = H;
+  for (let xx = x - w * 0.42; xx <= x + w * 0.42; xx += 6) m = Math.min(m, plateTop(xx));
+  return m - 2;
 }
 
 function updateCone(dt, now) {
@@ -2621,11 +2686,11 @@ function updateCone(dt, now) {
     cone.resting = false;
   }
   // 잡기: 주먹 쥔 손바닥이 라바콘 몸통 가까이
-  if (!cone.heldBy) {
+  if (!cone.heldBy && S.stampMode === 2) {
     const bodyX = cone.x, bodyY = cone.y - h * 0.5;
     for (const hd of hands) {
       if (cone.grip[hd.id] && Math.hypot(hd.palm.x - bodyX, hd.palm.y - bodyY) < S.grabDist + coneW() * 0.25) {
-        cone.heldBy = hd.id; cone.lastStamp = null; strokes.push([]); cone.hand = null; cone.hvx = cone.hvy = 0; cone.armed = true;
+        cone.heldBy = hd.id; cone.lastStamp = null; cone.hand = null; cone.hvx = cone.hvy = 0; cone.armed = true;
         cone.sizeBase = cone.sizeNow = hd.size || 0; cone.approach = 0; cone.pressing = false;
         break;
       }
@@ -2650,15 +2715,7 @@ function updateCone(dt, now) {
         if (!cone.pressing) cone.sizeBase += (cone.sizeNow - cone.sizeBase) * Math.min(1, dt * 1.2);
       }
     }
-    if (S.stampMode === 1) {
-      // 방식 1: 라바콘 밑면이 색연필 끝 → 지나간 길에 선이 그려짐
-      if (!strokes.length) strokes.push([]);
-      const s = strokes[strokes.length - 1], last = s[s.length - 1];
-      if (last && Math.hypot(cone.x - last.x, cone.y - last.y) > 150) strokes.push([]);   // 순간이동한 구간은 잇지 않음
-      if (inEgg(cone.x, cone.y) && (!last || Math.hypot(cone.x - last.x, cone.y - last.y) > 3)) {
-        strokes[strokes.length - 1].push({ x: cone.x, y: cone.y, t: now, j: Math.random() });
-      } else if (!inEgg(cone.x, cone.y) && last) strokes.push([]);   // 계란 밖으로 나가면 끊김
-    } else {
+    {
       // 방식 2: 손을 화면 쪽으로 쑥 내밀 때마다 카메라 전체에 3~5개 (다시 손을 당겨야 다음 도장)
       const ratio = cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1;
       cone.approach = Math.max(0, Math.min(1, (ratio - 1) / S.pushRatio));
@@ -2668,33 +2725,26 @@ function updateCone(dt, now) {
       if (!cone.armed && ratio < 1 + S.pushRatio * 0.3) cone.armed = true;
     }
   } else if (!cone.resting) {
-    // 중력 + 계란 벽/바닥 충돌
+    // 중력 + 화면 가장자리 + 접시 윗면 충돌 (계란은 그냥 지나감)
     const w = coneW();
-    const fy = x => { let m = H; for (let xx = x - w * 0.4; xx <= x + w * 0.4; xx += 4) m = Math.min(m, floorY[Math.round(xx)] || H); return m - 2; };
     cone.vy += S.gravity * dt;
     let nx = cone.x + cone.vx * dt, ny = cone.y + cone.vy * dt;
-    const minX = egg.x + w * 0.45, maxX = egg.x + egg.w - w * 0.45;
+    const minX = w * 0.45, maxX = W - w * 0.45;
     if (nx < minX || nx > maxX) { nx = Math.min(maxX, Math.max(minX, nx)); cone.vx = -cone.vx * 0.5; }
-    const p = conePoints(nx, ny);
-    if ((!inEgg(...p.left) && cone.vx < 0) || (!inEgg(...p.right) && cone.vx > 0)) {   // 옆벽
-      cone.vx = -cone.vx * 0.5; nx = cone.x;
-    }
-    if (!inEgg(...conePoints(nx, ny).top) && cone.vy < 0) {   // 천장
-      cone.vy = Math.abs(cone.vy) * 0.4; ny = cone.y;
-    }
-    const floor = fy(nx);
+    if (ny - h < 0 && cone.vy < 0) { ny = h; cone.vy = Math.abs(cone.vy) * 0.4; }      // 천장
+    const floor = coneFloor(nx);
     let onFloor = false;
-    if (ny >= floor) {                                       // 바닥 → 통통 튀다 멈춤
+    if (cone.y <= floor + 4 && ny >= floor) {                // 위에서 내려와 닿았을 때만 (옆에서 들어오면 통과)
       ny = floor;
       if (cone.vy > 150) { cone.vy = -cone.vy * S.bounce; cone.vx *= 0.8; }
       else { cone.vy = 0; onFloor = true; }
-    }
+    } else if (ny >= H) { ny = H; if (cone.vy > 150) { cone.vy = -cone.vy * S.bounce; cone.vx *= 0.8; } else { cone.vy = 0; onFloor = true; } }
     if (onFloor) {
-      // 계란 바닥이 기울어진 곳이면 낮은 쪽으로 미끄러짐
-      const xi = Math.round(nx), s = ((floorY[xi + 30] || 0) - (floorY[xi - 30] || 0)) / 60;
+      // 접시 가장자리처럼 기울어진 곳이면 낮은 쪽으로 미끄러짐
+      const s = (coneFloor(nx + 30) - coneFloor(nx - 30)) / 60;
       cone.vx += S.gravity * s / (1 + s * s) * dt;
       cone.vx *= Math.pow(0.04, dt);
-      if (Math.abs(s) < 0.1 && Math.abs(cone.vx) < 30) { cone.vx = 0; cone.resting = true; }
+      if (Math.abs(s) < 0.12 && Math.abs(cone.vx) < 30) { cone.vx = 0; cone.resting = true; }
     }
     cone.x = nx; cone.y = ny;
   }
@@ -2704,10 +2754,31 @@ function updateCone(dt, now) {
   if (vx < -60) cone.look = 'L'; else if (vx > 60) cone.look = 'R'; else if (Math.abs(vx) < 25) cone.look = 'M';
 }
 
-if (location.hash === '#test') window.__fish = () => ({ x: fish.x, y: fish.y, inEgg: inEgg(fish.x, fish.y) });
+if (location.hash === '#test') window.__fish = () => ({ x: fish.x, y: fish.y, inEgg: inEgg(fish.x, fish.y), pencil: fish.pencil, drawing: fish.drawing, strokes: strokes.reduce((a, s) => a + s.length, 0) });
 if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode, pressing: cone.pressing });
+// 색연필 그림: 끝(심)이 검지 끝 위치, 몸통은 오른쪽 아래로 비스듬히
+function drawPencil(now) {
+  const L = S.pencilLength, wd = L * 0.16, tipL = L * 0.22;
+  const pop = 1 + 0.3 * Math.max(0, 1 - (now - fish.popT) / 0.25);
+  ctx.save();
+  ctx.translate(fish.x, fish.y); ctx.rotate(-Math.PI * 0.72); ctx.scale(pop, pop);
+  ctx.translate(tipL + L, 0);                               // 원점 = 몸통 뒤끝, +x 방향이 심 쪽
+  ctx.rotate(Math.PI);
+  ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+  ctx.fillStyle = S.penColor; ctx.beginPath(); ctx.roundRect(-L - tipL, -wd / 2, L, wd, 4); ctx.fill();   // 몸통
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#115f3b'; ctx.fillRect(-L - tipL, -wd / 2, L, wd * 0.22);                          // 각진 면
+  ctx.fillStyle = '#e9cfa5';                                                                            // 깎은 나무
+  ctx.beginPath(); ctx.moveTo(-tipL, -wd / 2); ctx.lineTo(0, 0); ctx.lineTo(-tipL, wd / 2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = S.penColor;                                                                           // 심
+  ctx.beginPath(); ctx.moveTo(-tipL * 0.38, -wd * 0.19); ctx.lineTo(0, 0); ctx.lineTo(-tipL * 0.38, wd * 0.19); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.25; ctx.fillRect(-L - tipL + 6, wd * 0.12, L - 12, wd * 0.12);   // 반짝
+  ctx.restore();
+  if (fish.drawing) { ctx.save(); ctx.fillStyle = S.penColor; ctx.beginPath(); ctx.arc(fish.x, fish.y, S.penWidth * 0.6, 0, 7); ctx.fill(); ctx.restore(); }
+}
+
 function update(dt, now) {
-  updateFish(dt);
+  if (!updatePencil(dt, now)) updateFish(dt);
   updateCone(dt, now);
   placed = placed.filter(p => p.clearT ? now - p.clearT < 0.35 : (p.keep || now - p.t < S.stampLife));
   for (const s of strokes) while (s.length && now - s[0].t > S.stampLife) s.shift();
@@ -2752,7 +2823,9 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
 
-  const img = coneImg[cone.look] || coneImg.M;              // 라바콘
+  ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
+
+  const img = coneImg[cone.look] || coneImg.M;              // 라바콘 (배경 위, 화면 어디든)
   if (img) {
     const w = coneW(), h = coneH();
     const k = Math.max(0, 1 - (now - cone.pressT) / 0.16);  // 도장 찍을 때 꾹 눌렸다 돌아옴
@@ -2769,12 +2842,13 @@ function draw(now) {
     ctx.restore();
   }
 
-  ctx.drawImage(bgCut, 0, 0);                               // 배경 (계란 밖을 덮음)
 
-  if (charImg) {                                            // 새(물고기): 배경 위, 화면 전체를 날아다님
+  if (fish.pencil) drawPencil(now);                         // 색연필로 변신한 새
+  else if (charImg) {                                       // 새(물고기): 배경 위, 화면 전체를 날아다님
     const w = S.charWidth, h = w * charImg.height / charImg.width;
+    const pop = 1 + 0.25 * Math.max(0, 1 - (now - fish.popT) / 0.25);   // 다시 새로 돌아올 때 뿅
     ctx.save();
-    ctx.translate(fish.x, fish.y + Math.sin(now * 3) * 6); ctx.rotate(Math.sin(now * 2) * 0.06); ctx.scale(fish.face, 1);
+    ctx.translate(fish.x, fish.y + Math.sin(now * 3) * 6); ctx.rotate(Math.sin(now * 2) * 0.06); ctx.scale(fish.face * pop, pop);
     ctx.drawImage(charImg, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
