@@ -2612,7 +2612,7 @@ function updatePencil(dt, now) {
     // 검지로 새를 콕 → 색연필
     for (const h of hands) {
       const ix = h.idxExt ?? h.pointing;
-      if (h.tip && ix && h.ratio >= S.grabOn && Math.hypot(h.tip.x - fish.x, h.tip.y - fish.drawY) < S.pokeDist) {
+      if (h.tip && ix && Math.hypot(h.tip.x - fish.x, h.tip.y - fish.drawY) < S.pokeDist) {
         fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.popT = now; strokes.push([]);
         break;
       }
@@ -2627,7 +2627,8 @@ function updatePencil(dt, now) {
     return true;
   }
   fish.lostT = 0; fish.owner = h.id;
-  if (h.ratio < S.grabOn) { dropPencil(); return false; }      // 주먹 쥐면 색연필을 놓음
+  // 주먹 = 검지까지 접고 쥔 상태 (검지만 편 자세는 주먹이 아님)
+  if (!(h.idxExt ?? h.pointing) && h.ratio < S.grabOn) { dropPencil(); return false; }
   fish.x += (h.tip.x - fish.x) * 0.6; fish.y += (h.tip.y - fish.y) * 0.6;
   // 검지를 펴고 있을 때만 그려짐 (손을 다 펴면 펜을 든 상태)
   const was = fish.drawing;
