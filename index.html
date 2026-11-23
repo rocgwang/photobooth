@@ -2507,9 +2507,10 @@ async function startCamera() {
 // 카메라 영상을 계란 영역에 꽉 차게(cover) 놓는 배치
 function camRect() {
   const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
-  const s = Math.max(egg.w / vw, egg.h / vh) * 1.02;
+  // 카메라를 화면 전체에 깔고, 배경의 계란 구멍으로 들여다보는 방식 → 손이 화면 끝까지 닿음
+  const s = Math.max(W / vw, H / vh);
   const dw = vw * s, dh = vh * s;
-  return { x: egg.cx - dw / 2, y: egg.cy - dh / 2, w: dw, h: dh, vw, vh };
+  return { x: (W - dw) / 2, y: (H - dh) / 2, w: dw, h: dh, vw, vh };
 }
 
 // ---------- 손 인식 (MediaPipe) ----------
@@ -2955,7 +2956,28 @@ function showQR(url) {
   msg.append(c, cap);
   window.__lastUrl = url;
 }
+// 계란 밖에 있는 손은 배경에 가려 안 보이니 위치를 표시 (사진에는 안 담김)
+function drawHandCursors(now) {
+  for (const h of hands) {
+    const p = h.palm, grip = cone.grip[h.id];
+    const holdingPencil = fish.pencil && fish.owner === h.id;
+    ctx.save();
+    if (!inEgg(p.x, p.y)) {
+      const r = 34;
+      ctx.lineWidth = 5; ctx.strokeStyle = '#115f3b';
+      ctx.fillStyle = grip ? 'rgba(17,95,59,0.85)' : 'rgba(255,255,255,0.75)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, grip ? r * 0.75 : r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    if (h.tip && h.pointing && !holdingPencil && S.stampMode === 1 && !inEgg(h.tip.x, h.tip.y)) {   // 검지 끝
+      ctx.fillStyle = '#115f3b'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(h.tip.x, h.tip.y, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 function drawShotUI(now) {
+  drawHandCursors(now);
   if (shot) {                                             // 3, 2, 1
     const left = S.countdown - (now - shot.start);
     if (left > 0) {
