@@ -2606,30 +2606,31 @@ function conePoints(x, y) {
 }
 
 let lastDrop = '';
+const pen = { x: 0, y: 0, backT: -9, bx: 0, by: 0 };   // 새에게서 나온 색연필
 function dropPencil(why = '') {
   lastDrop = why;
-  fish.pencil = false; fish.owner = null; fish.drawing = false; fish.popT = performance.now() / 1000;
-  const a = Math.random() * Math.PI * 2; fish.vx = S.charSpeed * Math.cos(a); fish.vy = S.charSpeed * Math.sin(a);
+  fish.pencil = false; fish.owner = null; fish.drawing = false;
+  pen.backT = performance.now() / 1000; pen.bx = pen.x; pen.by = pen.y;   // 색연필이 새에게 돌아감
 }
 function updatePencil(dt, now) {
   if (!fish.pencil) {
     if (S.stampMode !== 1) return false;
-    // 검지로 새를 콕 → 색연필
+    // 검지로 새를 콕 → 새에게서 색연필이 나옴
     for (const h of hands) {
       const ix = h.idxExt ?? h.pointing;
       if (h.tip && ix && Math.hypot(h.tip.x - fish.x, h.tip.y - fish.drawY) < S.pokeDist) {
-        fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.fistT = 0; fish.popT = now; strokes.push([]); lastDrop = '';
+        fish.pencil = true; fish.owner = h.id; fish.lostT = 0; fish.fistT = 0; fish.popT = now; pen.x = fish.x; pen.y = fish.drawY || fish.y; pen.backT = -9; strokes.push([]); lastDrop = '';
         break;
       }
     }
     return fish.pencil;
   }
   const h = hands.find(x => x.id === fish.owner) || (hands.length === 1 ? hands[0] : null);
-  if (!h || !h.tip) {                                          // 손이 안 보이면 잠깐 기다렸다가 새로 돌아감
+  if (!h || !h.tip) {                                          // 손이 안 보이면 잠깐 기다렸다가 색연필이 새에게 돌아감
     fish.drawing = false;
     if (!fish.lostT) fish.lostT = now;
     if (now - fish.lostT > S.lostHold) dropPencil('손이 안 보여서 놓음');
-    return true;
+    return false;
   }
   fish.lostT = 0; fish.owner = h.id;
   // 주먹 = 검지까지 접고 쥔 상태 (검지만 편 자세는 주먹이 아님)
@@ -2637,24 +2638,25 @@ function updatePencil(dt, now) {
     if (!fish.fistT) fish.fistT = now;
     if (now - fish.fistT > S.fistHold) { dropPencil('주먹 쥐어서 놓음'); return false; }
   } else fish.fistT = 0;
-  fish.x += (h.tip.x - fish.x) * 0.6; fish.y += (h.tip.y - fish.y) * 0.6;
+  const k = now - fish.popT < 0.3 ? 0.2 : 0.6;               // 처음엔 새에게서 쏙 빠져나오듯 천천히
+  pen.x += (h.tip.x - pen.x) * k; pen.y += (h.tip.y - pen.y) * k;
   // 검지를 펴고 있을 때만 그려짐 (손을 다 펴면 펜을 든 상태)
   const was = fish.drawing;
   if (h.pointing) fish.pointT = now;
-  fish.drawing = (now - (fish.pointT || 0) < 0.2) && inEgg(fish.x, fish.y);   // 잠깐 끊겨도 선이 안 끊기게
+  fish.drawing = (now - (fish.pointT || 0) < 0.2) && now - fish.popT > 0.3 && inEgg(pen.x, pen.y);   // 잠깐 끊겨도 선이 안 끊기게
   if (fish.drawing) {
     if (!was || !strokes.length) strokes.push([]);
     const s = strokes[strokes.length - 1], last = s[s.length - 1];
-    if (last && Math.hypot(fish.x - last.x, fish.y - last.y) > 150) strokes.push([]);
-    if (!last || Math.hypot(fish.x - last.x, fish.y - last.y) > 3)
-      strokes[strokes.length - 1].push({ x: fish.x, y: fish.y, t: now, j: Math.random() });
+    if (last && Math.hypot(pen.x - last.x, pen.y - last.y) > 150) strokes.push([]);
+    if (!last || Math.hypot(pen.x - last.x, pen.y - last.y) > 3)
+      strokes[strokes.length - 1].push({ x: pen.x, y: pen.y, t: now, j: Math.random() });
   }
-  return true;
+  return false;
 }
 
 function updateFish(dt) {
   let near = Infinity;
-  if (S.stampMode === 1) for (const h of hands) if (h.tip) near = Math.min(near, Math.hypot(h.tip.x - fish.x, h.tip.y - fish.y));
+  if (S.stampMode === 1 && !fish.pencil) for (const h of hands) if (h.tip) near = Math.min(near, Math.hypot(h.tip.x - fish.x, h.tip.y - fish.y));
   const sp = S.charSpeed * (near < S.slowNear ? 0.25 + 0.75 * near / S.slowNear : 1);
   let a = Math.atan2(fish.vy, fish.vx) + (Math.random() * 3 - 1.5) * dt;
   fish.vx = sp * Math.cos(a); fish.vy = sp * Math.sin(a);
@@ -2781,11 +2783,11 @@ function updateCone(dt, now) {
 if (location.hash === '#test') window.__fish = () => ({ x: fish.x, y: fish.y, inEgg: inEgg(fish.x, fish.y), pencil: fish.pencil, drawing: fish.drawing, strokes: strokes.reduce((a, s) => a + s.length, 0) });
 if (location.hash === '#test') window.__state = () => ({ cone: { ...cone, grip: undefined }, stamps: placed.length, total: seqI, mode: S.stampMode, pressing: cone.pressing });
 // 색연필 그림: 끝(심)이 검지 끝 위치, 몸통은 오른쪽 아래로 비스듬히
-function drawPencil(now) {
+function drawPencil(now, px, py, grow = 1) {
   const L = S.pencilLength, wd = L * 0.16, tipL = L * 0.22;
-  const pop = 1 + 0.3 * Math.max(0, 1 - (now - fish.popT) / 0.25);
+  const pop = Math.max(0.05, grow);
   ctx.save();
-  ctx.translate(fish.x, fish.y); ctx.rotate(-Math.PI * 0.72); ctx.scale(pop, pop);
+  ctx.translate(px, py); ctx.rotate(-Math.PI * 0.72); ctx.scale(pop, pop);
   ctx.translate(tipL + L, 0);                               // 원점 = 몸통 뒤끝, +x 방향이 심 쪽
   ctx.rotate(Math.PI);
   ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
@@ -2798,11 +2800,11 @@ function drawPencil(now) {
   ctx.beginPath(); ctx.moveTo(-tipL * 0.38, -wd * 0.19); ctx.lineTo(0, 0); ctx.lineTo(-tipL * 0.38, wd * 0.19); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.25; ctx.fillRect(-L - tipL + 6, wd * 0.12, L - 12, wd * 0.12);   // 반짝
   ctx.restore();
-  if (fish.drawing) { ctx.save(); ctx.fillStyle = S.penColor; ctx.beginPath(); ctx.arc(fish.x, fish.y, S.penWidth * 0.6, 0, 7); ctx.fill(); ctx.restore(); }
+  if (fish.drawing) { ctx.save(); ctx.fillStyle = S.penColor; ctx.beginPath(); ctx.arc(px, py, S.penWidth * 0.6, 0, 7); ctx.fill(); ctx.restore(); }
 }
 
 function update(dt, now) {
-  if (!updatePencil(dt, now)) updateFish(dt);
+  updatePencil(dt, now); updateFish(dt);
   updateCone(dt, now);
   placed = placed.filter(p => p.clearT ? now - p.clearT < 0.35 : (p.keep || now - p.t < S.stampLife));
   for (const s of strokes) while (s.length && now - s[0].t > S.stampLife) s.shift();
@@ -2867,15 +2869,19 @@ function draw(now) {
   }
 
 
-  if (fish.pencil) drawPencil(now);                         // 색연필로 변신한 새
-  else if (charImg) {                                       // 새(물고기): 배경 위, 화면 전체를 날아다님
+  if (charImg) {                                       // 새(물고기): 배경 위, 화면 전체를 날아다님
     const w = S.charWidth, h = w * charImg.height / charImg.width;
-    const pop = 1 + 0.25 * Math.max(0, 1 - (now - fish.popT) / 0.25);   // 다시 새로 돌아올 때 뿅
+    const pop = 1 + 0.15 * Math.max(0, 1 - (now - fish.popT) / 0.25);   // 색연필이 나올 때 살짝 뿅
     ctx.save();
     fish.drawY = fish.y + Math.sin(now * 3) * 6;
     ctx.translate(fish.x, fish.drawY); ctx.rotate(Math.sin(now * 2) * 0.06); ctx.scale(fish.face * pop, pop);
     ctx.drawImage(charImg, -w / 2, -h / 2, w, h);
     ctx.restore();
+  }
+  if (fish.pencil) drawPencil(now, pen.x, pen.y, Math.min(1, (now - fish.popT) / 0.3));   // 새에게서 나온 색연필
+  else if (now - pen.backT < 0.35) {                        // 놓으면 새에게 쏙 돌아감
+    const u = (now - pen.backT) / 0.35;
+    drawPencil(now, pen.bx + (fish.x - pen.bx) * u, pen.by + ((fish.drawY || fish.y) - pen.by) * u, 1 - u);
   }
 
   if (S.stampMode === 2) {                                  // 도장 지우기 버튼
