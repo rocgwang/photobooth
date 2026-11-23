@@ -45,7 +45,7 @@
 <div id="shotPanel" hidden>
   <img id="shotImg" alt="방금 찍은 사진">
   <div id="shotMsg">사진을 올리는 중…</div>
-  <div class="notice">사진은 QR코드 생성을 위해서만 저장되며, 전시 기간이 끝나면 모두 폐기됩니다.</div>
+  <div class="notice">촬영된 사진은 QR코드 생성을 위해서만 저장되며, ATC 종료 후 모두 폐기됩니다.</div>
 </div>
 
 <script>//---------------------------------------------------------------------
@@ -2862,7 +2862,7 @@ function drawShotUI(now) {
   }
   // 항상 떠 있는 안내 (화면 위쪽 가운데) — 촬영은 이걸 그리기 전에 하므로 사진에는 안 담김
   {
-    const msg = '사진은 QR코드 생성을 위해서만 저장되며, 전시 기간이 끝나면 모두 폐기됩니다.';
+    const msg = '촬영된 사진은 QR코드 생성을 위해서만 저장되며, ATC 종료 후 모두 폐기됩니다.';
     ctx.save();
     ctx.font = '400 17px -apple-system, "Apple SD Gothic Neo", sans-serif';
     ctx.fillStyle = '#6c7485'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';   // 회색 글자만, 화면 위쪽 가운데
