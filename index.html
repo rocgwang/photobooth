@@ -2860,16 +2860,13 @@ function drawShotUI(now) {
       ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
     }
   }
-  // 항상 떠 있는 안내 (화면 아래 가운데) — 촬영은 이걸 그리기 전에 하므로 사진에는 안 담김
+  // 항상 떠 있는 안내 (화면 위쪽 가운데) — 촬영은 이걸 그리기 전에 하므로 사진에는 안 담김
   {
     const msg = '사진은 QR코드 생성을 위해서만 저장되며, 전시 기간이 끝나면 모두 폐기됩니다.';
     ctx.save();
-    ctx.font = '500 22px -apple-system, "Apple SD Gothic Neo", sans-serif';
-    const tw = ctx.measureText(msg).width, bw = tw + 48, bh = 44, bx = W / 2 - bw / 2, by = H - bh - 18;
-    ctx.fillStyle = 'rgba(232,243,238,0.88)';
-    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
-    ctx.fillStyle = '#115f3b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(msg, W / 2, by + bh / 2 + 1);
+    ctx.font = '400 17px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    ctx.fillStyle = '#6c7485'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';   // 회색 글자만, 화면 위쪽 가운데
+    ctx.fillText(msg, W / 2, 34);
     ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
   }
   const fl = 1 - (now - flashT) / 0.35;                   // 찰칵 (하얀 번쩍)
