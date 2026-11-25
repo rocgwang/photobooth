@@ -3011,8 +3011,30 @@ function drawHandCursors(now) {
   }
 }
 
+// 모드별 사용법 (왼쪽 아래 구석, 작은 글씨) — 사진에는 안 담김
+const MODE_HELP = {
+  1: ['방식 1 · 색연필', '검지로 새를 콕 누르면 새가 손끝을 따라와요', '검지만 펴고 움직이면 선이 그려져요', '주먹을 쥐면 새가 다시 날아가요'],
+  2: ['방식 2 · 도장', '라바콘에 손을 대고 주먹을 쥐면 잡혀요', '화면 쪽으로 손을 쑥 내밀면 도장이 찍혀요', '손을 펴면 놓아요 · 휘두르다 놓으면 던져져요'],
+};
+function drawModeHelp() {
+  const lines = MODE_HELP[S.stampMode] || [];
+  ctx.save();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(255,255,255,0.9)'; ctx.shadowBlur = 6;
+  const x = 172, lh = 24, y0 = H - 22 - (lines.length - 1) * lh;
+  lines.forEach((l, i) => {
+    ctx.font = i === 0 ? '700 18px -apple-system, "Apple SD Gothic Neo", sans-serif' : '400 16px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(255,255,255,0.92)';   // 글자 테두리 (접시 위에서도 잘 보이게)
+    ctx.strokeText(l, x, y0 + i * lh);
+    ctx.fillStyle = i === 0 ? '#115f3b' : '#2d3137';
+    ctx.fillText(l, x, y0 + i * lh);
+  });
+  ctx.restore();
+}
+
 function drawShotUI(now) {
   drawHandCursors(now);
+  drawModeHelp();
   if (shot) {                                             // 3, 2, 1
     const left = S.countdown - (now - shot.start);
     if (left > 0) {
