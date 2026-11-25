@@ -2373,7 +2373,7 @@ const SETTINGS = {
   stampSize: 83,      // 스탬프 크기(px)
   stampGap: 66,       // 이만큼 움직일 때마다 하나씩 찍힘
   stampTilt: 20,      // 랜덤 기울기 최대 각도
-  stampLife: 5,       // [방식 1] 색연필 선이 사라지는 시간(초)
+  stampLife: 5,       // (지금은 안 씀) 예전 '몇 초 뒤 사라짐' 시간
   penColor: '#188653', // [방식 1] 색연필 색
   penWidth: 12,       // [방식 1] 색연필 굵기(px)
   pencilLength: 170,  // [방식 1] 화면에 보이는 색연필 길이(px)
@@ -2426,7 +2426,7 @@ addEventListener('keydown', e => {
   if (c === 'KeyC') clearStamps();
   if (c === 'Enter' || c === 'NumpadEnter') {
     const panel = document.getElementById('shotPanel');
-    if (!panel.hidden) { panel.hidden = true; clearTimeout(finishShot.timer); shotSeq++; }
+    if (!panel.hidden) { panel.hidden = true; clearTimeout(finishShot.timer); shotSeq++; clearStamps(); }   // 다음 사람을 위해 초기화
     else startShot();
   }
 });
@@ -2443,17 +2443,21 @@ function setMode(m) {
 // ---------- 도장 지우기 버튼 (방식 2) ----------
 const CLEAR_BTN = { x: 1650, y: 992, w: 230, h: 68 };   // 1920 화면 기준 위치·크기
 let clearPressT = -9;
+let strokesClearT = 0;
 function clearStamps() {
-  strokes = [];
   const now = performance.now() / 1000;
   for (const p of placed) if (!p.clearT) p.clearT = now;
+  if (strokes.some(s => s.length)) {
+    strokesClearT = now;
+    setTimeout(() => { strokes = []; strokesClearT = 0; if (fish.pencil) strokes.push([]); }, 380);
+  }
   clearPressT = now;
 }
 const toStage = e => {
   const r = stage.getBoundingClientRect();
   return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
 };
-const onBtn = p => SETTINGS.stampMode === 2 && p.x >= CLEAR_BTN.x && p.x <= CLEAR_BTN.x + CLEAR_BTN.w && p.y >= CLEAR_BTN.y && p.y <= CLEAR_BTN.y + CLEAR_BTN.h;
+const onBtn = p => p.x >= CLEAR_BTN.x && p.x <= CLEAR_BTN.x + CLEAR_BTN.w && p.y >= CLEAR_BTN.y && p.y <= CLEAR_BTN.y + CLEAR_BTN.h;
 stage.addEventListener('pointerdown', e => { if (onBtn(toStage(e))) clearStamps(); });
 stage.addEventListener('pointermove', e => { stage.style.cursor = onBtn(toStage(e)) ? 'pointer' : 'default'; });
 
@@ -2837,7 +2841,6 @@ function update(dt, now) {
   if (!updatePencil(dt, now)) updateFish(dt);
   updateCone(dt, now);
   placed = placed.filter(p => p.clearT ? now - p.clearT < 0.35 : (p.keep || now - p.t < S.stampLife));
-  for (const s of strokes) while (s.length && now - s[0].t > S.stampLife) s.shift();
   strokes = strokes.filter((s, i) => s.length || i === strokes.length - 1);
 }
 
@@ -2859,7 +2862,7 @@ function draw(now) {
   for (const s of strokes) {
     for (let i = 1; i < s.length; i++) {
       const a = s[i - 1], b = s[i], age = now - b.t, life = S.stampLife;
-      const fade = age < life - 0.6 ? 1 : Math.max(0, (life - age) / 0.6);
+      const fade = strokesClearT ? Math.max(0, 1 - (now - strokesClearT) / 0.35) : 1;   // 지울 때만 스르륵
       const passes = [[0, 0, S.penWidth, 0.85], [2.2, -1.5, S.penWidth * 0.45, 0.35], [-2, 1.8, S.penWidth * 0.35, 0.3]];
       for (const [ox, oy, w, al] of passes) {
         const jx = (b.j - 0.5) * 1.6;
@@ -2912,16 +2915,16 @@ function draw(now) {
     ctx.restore();
   }
 
-  if (S.stampMode === 2) {                                  // 도장 지우기 버튼
+  {                                                         // 지우기 버튼 (두 방식 모두)
     const b = CLEAR_BTN, press = Math.max(0, 1 - (performance.now() / 1000 - clearPressT) / 0.2);
-    const sc = 1 - 0.06 * press, n = placed.filter(p => !p.clearT).length;
+    const sc = 1 - 0.06 * press, n = placed.filter(p => !p.clearT).length + (strokesClearT ? 0 : strokes.reduce((m, s) => m + s.length, 0));
     ctx.save();
     ctx.translate(b.x + b.w / 2, b.y + b.h / 2); ctx.scale(sc, sc);
     ctx.fillStyle = '#115f3b'; ctx.globalAlpha = n ? 1 : 0.55;
     ctx.beginPath(); ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.font = '700 32px -apple-system, "Apple SD Gothic Neo", sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('도장 지우기', 0, 2);
+    ctx.fillText(S.stampMode === 1 ? '그림 지우기' : '도장 지우기', 0, 2);
     ctx.restore(); ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
   }
 
@@ -2972,7 +2975,7 @@ function finishShot() {
     msg.innerHTML = '<div class="wait">사진을 올리는 중…</div>';
     panel.hidden = false;
     clearTimeout(finishShot.timer);
-    finishShot.timer = setTimeout(() => { panel.hidden = true; }, S.panelSeconds * 1000);
+    finishShot.timer = setTimeout(() => { panel.hidden = true; clearStamps(); }, S.panelSeconds * 1000);
     window.__lastShot = blob;
     const myShot = ++shotSeq;
     uploadPhoto(blob)
@@ -3040,8 +3043,8 @@ function drawHandCursors(now) {
 
 // 모드별 사용법 (오른쪽 위 구석, 작은 글씨) — 사진에는 안 담김
 const MODE_HELP = {
-  1: ['방식 1 · 색연필', '검지로 새를 콕 누르면 새가 손끝을 따라와요', '검지만 펴고 움직이면 선이 그려져요', '주먹을 쥐면 새가 다시 날아가요'],
-  2: ['방식 2 · 도장', '라바콘에 손을 대고 주먹을 쥐면 잡혀요', '화면 쪽으로 손을 쑥 내밀면 도장이 찍혀요', '손을 펴면 놓아요 · 휘두르다 놓으면 던져져요'],
+  1: ['방식 1 · 색연필', '검지로 새를 콕 누르면 새가 손끝을 따라와요', '검지만 펴고 움직이면 선이 그려져요', '주먹을 쥐면 새가 다시 날아가요', '사진을 찍고 나면 그림이 지워져요'],
+  2: ['방식 2 · 도장', '라바콘에 손을 대고 주먹을 쥐면 잡혀요', '화면 쪽으로 손을 쑥 내밀면 도장이 찍혀요', '손을 펴면 놓아요 · 휘두르다 놓으면 던져져요', '사진을 찍고 나면 도장이 지워져요'],
 };
 function drawModeHelp() {
   const lines = MODE_HELP[S.stampMode] || [];
