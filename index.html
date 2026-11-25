@@ -2533,7 +2533,7 @@ async function startHands() {
 }
 
 let hands = [];   // [{id, ratio, palm:{x,y}, pts}]
-if (location.hash === '#test') window.__setHands = a => { hands = a; landmarker = landmarker || { detectForVideo: () => ({}) }; };
+if (location.hash === '#test') window.__setHands = (a, track) => { hands = track ? trackHands(a) : a; landmarker = landmarker || { detectForVideo: () => ({}) }; };
 let frozenHands = false;
 let lastVideoTime = -1;
 function detectHands() {
@@ -2562,6 +2562,33 @@ function detectHands() {
     const pointing = idxExt && !midExt && !(ringExt && pinkExt);   // 검지만 편 자세 (그리기용)
     return { id: side, ratio, palm, size, tip, idxExt, pointing, pts: lm.map((_, k) => P(k)) };
   });
+  hands = trackHands(hands);
+}
+
+// 손마다 고정 번호 붙이기: 이전 프레임에서 가장 가까운 손의 번호를 이어받음
+// (여러 사람·여러 손이 나와도 오브젝트가 처음 잡은 손만 따라가게)
+let handTracks = [], nextHandId = 1;
+function trackHands(list) {
+  const now = performance.now() / 1000;
+  handTracks = handTracks.filter(tr => now - tr.seen < 2.0);      // 2초 안에 다시 나타나면 같은 손으로 봄
+  const pairs = [];
+  list.forEach((h, i) => handTracks.forEach((tr, j) => {
+    const d = Math.hypot(h.palm.x - tr.x, h.palm.y - tr.y);
+    if (d < 320) pairs.push([d, i, j]);
+  }));
+  pairs.sort((a, b) => a[0] - b[0]);
+  const usedH = new Set(), usedT = new Set();
+  for (const [, i, j] of pairs) {
+    if (usedH.has(i) || usedT.has(j)) continue;
+    usedH.add(i); usedT.add(j);
+    const tr = handTracks[j]; list[i].id = tr.id; tr.x = list[i].palm.x; tr.y = list[i].palm.y; tr.seen = now;
+  }
+  list.forEach((h, i) => {
+    if (usedH.has(i)) return;
+    const tr = { id: 'hand' + nextHandId++, x: h.palm.x, y: h.palm.y, seen: now };
+    handTracks.push(tr); h.id = tr.id;
+  });
+  return list;
 }
 
 // ---------- 물고기 · 라바콘 · 스탬프 상태 ----------
@@ -2626,7 +2653,7 @@ function updatePencil(dt, now) {
     }
     return fish.pencil;
   }
-  const h = hands.find(x => x.id === fish.owner) || (hands.length === 1 ? hands[0] : null);
+  const h = hands.find(x => x.id === fish.owner);               // 처음 콕 누른 손만 따라감
   if (!h || !h.tip) {                                          // 손이 안 보이면 잠깐 기다렸다가 새가 다시 날아감
     fish.drawing = false;
     if (!fish.lostT) fish.lostT = now;
