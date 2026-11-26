@@ -2441,7 +2441,7 @@ function setMode(m) {
 }
 
 // ---------- 도장 지우기 버튼 (방식 2) ----------
-const CLEAR_BTN = { x: 1650, y: 992, w: 230, h: 68 };   // 1920 화면 기준 위치·크기
+const CLEAR_BTN = { x: 1600, y: 992, w: 290, h: 68 };   // 1920 화면 기준 위치·크기
 let clearPressT = -9;
 let strokesClearT = 0;
 function clearStamps() {
@@ -2924,7 +2924,7 @@ function draw(now) {
     ctx.beginPath(); ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.font = '700 32px -apple-system, "Apple SD Gothic Neo", sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(S.stampMode === 1 ? '그림 지우기' : '도장 지우기', 0, 2);
+    ctx.fillText((S.stampMode === 1 ? '그림 지우기' : '도장 지우기') + ' (C)', 0, 2);
     ctx.restore(); ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
   }
 
@@ -3043,8 +3043,8 @@ function drawHandCursors(now) {
 
 // 모드별 사용법 (오른쪽 위 구석, 작은 글씨) — 사진에는 안 담김
 const MODE_HELP = {
-  1: ['방식 1 · 색연필', '검지로 새를 콕 누르면 새가 손끝을 따라와요', '검지만 펴고 움직이면 선이 그려져요', '주먹을 쥐면 새가 다시 날아가요', '사진을 찍고 나면 그림이 지워져요'],
-  2: ['방식 2 · 도장', '라바콘에 손을 대고 주먹을 쥐면 잡혀요', '화면 쪽으로 손을 쑥 내밀면 도장이 찍혀요', '손을 펴면 놓아요 · 휘두르다 놓으면 던져져요', '사진을 찍고 나면 도장이 지워져요'],
+  1: ['방식 1 · 색연필', '검지로 새를 콕 누르면 새가 손끝을 따라와요', '검지만 펴고 움직이면 선이 그려져요', '주먹을 쥐면 새가 다시 날아가요', 'Enter를 누르면 3초 뒤 사진을 찍어요', '사진을 찍고 나면 그림이 지워져요'],
+  2: ['방식 2 · 도장', '라바콘에 손을 대고 주먹을 쥐면 잡혀요', '화면 쪽으로 손을 쑥 내밀면 도장이 찍혀요', '손을 펴면 놓아요 · 휘두르다 놓으면 던져져요', 'Enter를 누르면 3초 뒤 사진을 찍어요', '사진을 찍고 나면 도장이 지워져요'],
 };
 function drawModeHelp() {
   const lines = MODE_HELP[S.stampMode] || [];
