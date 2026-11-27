@@ -2915,44 +2915,7 @@ function draw(now) {
     ctx.restore();
   }
 
-  {                                                         // 지우기 버튼 (두 방식 모두)
-    const b = CLEAR_BTN, press = Math.max(0, 1 - (performance.now() / 1000 - clearPressT) / 0.2);
-    const sc = 1 - 0.06 * press, n = placed.filter(p => !p.clearT).length + (strokesClearT ? 0 : strokes.reduce((m, s) => m + s.length, 0));
-    ctx.save();
-    ctx.translate(b.x + b.w / 2, b.y + b.h / 2); ctx.scale(sc, sc);
-    ctx.fillStyle = '#115f3b'; ctx.globalAlpha = n ? 1 : 0.55;
-    ctx.beginPath(); ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
-    ctx.fillStyle = '#ffffff'; ctx.font = '700 32px -apple-system, "Apple SD Gothic Neo", sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText((S.stampMode === 1 ? '그림 지우기' : '도장 지우기') + ' (C)', 0, 2);
-    ctx.restore(); ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
-  }
 
-  const nowT = performance.now() / 1000;                    // 도장 방식 바꿨을 때 잠깐 표시
-  if (nowT < toast.until) {
-    ctx.globalAlpha = Math.min(1, (toast.until - nowT) / 0.4);
-    ctx.font = '600 34px -apple-system, "Apple SD Gothic Neo", sans-serif';
-    const tw = ctx.measureText(toast.text).width;
-    ctx.fillStyle = 'rgba(10,56,35,0.85)';
-    ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2 - 28, 40, tw + 56, 64, 32); ctx.fill();
-    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(toast.text, W / 2, 72);
-    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = 1;
-  }
-
-  if (debug) {
-    for (const h of hands) {
-      ctx.fillStyle = cone.grip[h.id] ? '#ff2626' : '#ffffff';
-      for (const p of h.pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill(); }
-      ctx.font = '24px sans-serif'; ctx.fillText(h.ratio.toFixed(2), h.palm.x + 12, h.palm.y);
-      if (h.tip) { ctx.fillStyle = h.pointing ? '#18ff7a' : h.idxExt ? '#ffd400' : '#ff2626'; ctx.beginPath(); ctx.arc(h.tip.x, h.tip.y, 14, 0, 7); ctx.fill();
-        ctx.fillText(h.pointing ? '그리기' : h.idxExt ? '콕 가능' : '검지 접힘', h.tip.x + 18, h.tip.y - 10); }
-    }
-    if (S.stampMode === 1 && !fish.pencil) { ctx.save(); ctx.strokeStyle = '#ffd400'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(fish.x, fish.drawY || fish.y, S.pokeDist, 0, 7); ctx.stroke(); ctx.restore(); }
-    if (lastDrop) { ctx.fillStyle = '#ffd400'; ctx.font = '22px sans-serif'; ctx.fillText('마지막: ' + lastDrop, egg.x + 40, egg.y + egg.h - 75); }
-    ctx.fillStyle = '#ffffff'; ctx.font = '22px sans-serif';
-    ctx.fillText(`도장 방식 ${S.stampMode} · 다가옴 ${(cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1).toFixed(2)} (찍힘 ${(1 + S.pushRatio).toFixed(2)})`, egg.x + 40, egg.y + egg.h - 40);
-  }
 }
 
 // ---------- Enter → 3초 뒤 촬영 ----------
@@ -3090,7 +3053,50 @@ function drawModeHelp() {
   ctx.restore();
 }
 
+// 화면용 UI (지우기 버튼, 방식 바뀜 알림, D 디버그) — 사진을 찍은 뒤에 그려서 사진에는 안 담김
+function drawOverlayUI(now) {
+  {                                                         // 지우기 버튼 (두 방식 모두)
+    const b = CLEAR_BTN, press = Math.max(0, 1 - (performance.now() / 1000 - clearPressT) / 0.2);
+    const sc = 1 - 0.06 * press, n = placed.filter(p => !p.clearT).length + (strokesClearT ? 0 : strokes.reduce((m, s) => m + s.length, 0));
+    ctx.save();
+    ctx.translate(b.x + b.w / 2, b.y + b.h / 2); ctx.scale(sc, sc);
+    ctx.fillStyle = '#115f3b'; ctx.globalAlpha = n ? 1 : 0.55;
+    ctx.beginPath(); ctx.roundRect(-b.w / 2, -b.h / 2, b.w, b.h, b.h / 2); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.font = '700 32px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText((S.stampMode === 1 ? '그림 지우기' : '도장 지우기') + ' (C)', 0, 2);
+    ctx.restore(); ctx.globalAlpha = 1; ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+  }
+
+  const nowT = performance.now() / 1000;                    // 도장 방식 바꿨을 때 잠깐 표시
+  if (nowT < toast.until) {
+    ctx.globalAlpha = Math.min(1, (toast.until - nowT) / 0.4);
+    ctx.font = '600 34px -apple-system, "Apple SD Gothic Neo", sans-serif';
+    const tw = ctx.measureText(toast.text).width;
+    ctx.fillStyle = 'rgba(10,56,35,0.85)';
+    ctx.beginPath(); ctx.roundRect(W / 2 - tw / 2 - 28, 40, tw + 56, 64, 32); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(toast.text, W / 2, 72);
+    ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic'; ctx.globalAlpha = 1;
+  }
+
+  if (debug) {
+    for (const h of hands) {
+      ctx.fillStyle = cone.grip[h.id] ? '#ff2626' : '#ffffff';
+      for (const p of h.pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill(); }
+      ctx.font = '24px sans-serif'; ctx.fillText(h.ratio.toFixed(2), h.palm.x + 12, h.palm.y);
+      if (h.tip) { ctx.fillStyle = h.pointing ? '#18ff7a' : h.idxExt ? '#ffd400' : '#ff2626'; ctx.beginPath(); ctx.arc(h.tip.x, h.tip.y, 14, 0, 7); ctx.fill();
+        ctx.fillText(h.pointing ? '그리기' : h.idxExt ? '콕 가능' : '검지 접힘', h.tip.x + 18, h.tip.y - 10); }
+    }
+    if (S.stampMode === 1 && !fish.pencil) { ctx.save(); ctx.strokeStyle = '#ffd400'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(fish.x, fish.drawY || fish.y, S.pokeDist, 0, 7); ctx.stroke(); ctx.restore(); }
+    if (lastDrop) { ctx.fillStyle = '#ffd400'; ctx.font = '22px sans-serif'; ctx.fillText('마지막: ' + lastDrop, egg.x + 40, egg.y + egg.h - 75); }
+    ctx.fillStyle = '#ffffff'; ctx.font = '22px sans-serif';
+    ctx.fillText(`도장 방식 ${S.stampMode} · 다가옴 ${(cone.sizeBase ? cone.sizeNow / cone.sizeBase : 1).toFixed(2)} (찍힘 ${(1 + S.pushRatio).toFixed(2)})`, egg.x + 40, egg.y + egg.h - 40);
+  }
+}
+
 function drawShotUI(now) {
+  drawOverlayUI(now);
   drawHandCursors(now);
   drawModeHelp();
   if (shot) {                                             // 3, 2, 1
