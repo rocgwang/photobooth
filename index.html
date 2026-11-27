@@ -2383,7 +2383,7 @@ const SETTINGS = {
   lostHold: 2.0,      // [방식 1] 손이 이 시간(초) 이상 안 보여야 새로 돌아감
   birdMargin: 0.14,   // [방식 1] 새가 화면 가장자리에서 이 비율만큼 떨어져서 날아다님 (손이 닿게)
   // 접시 윗면(타원) — 라바콘이 올라서는 바닥. 1920×1080 배경 기준
-  plate: { cx: 940, cy: 945, a: 760, b: 131 },
+  plate: { cx: 940, cy: 945, a: 760, b: 131, standY: 975, edge: 0.9 },   // standY: 라바콘이 서는 높이(평평), edge: 접시 폭의 이 비율 안에서만 섬
   countdown: 3,       // Enter 누르고 찍히기까지(초)
   cloudName: 'aajguyhj',          // Cloudinary Cloud name
   uploadPreset: 'ATC 대외협력',    // Cloudinary upload preset (Unsigned)
@@ -2714,12 +2714,9 @@ function updateFish(dt) {
 
 // 접시 윗면 높이 (x에서). 접시 밖이면 화면 바닥
 function plateTop(x) {
+  // 접시 위는 평평한 바닥 (비탈이 없어서 떨어진 자리에 그대로 섬), 접시 밖은 화면 바닥
   const P = S.plate, u = (x - P.cx) / P.a;
-  if (Math.abs(u) >= 1) return H;
-  const rim = P.cy - P.b * Math.sqrt(1 - u * u);
-  // 계란이 가리는 곳은 계란 밑동 바로 앞(접시 위)에 서도록
-  const eb = floorY ? floorY[Math.max(0, Math.min(W - 1, Math.round(x)))] : 0;
-  return eb ? Math.min(H, Math.max(rim, eb + 22)) : rim;
+  return Math.abs(u) < P.edge ? P.standY : H;
 }
 // 라바콘 밑받침이 닿는 높이 = 밑받침 폭 안에서 가장 높은 접시 면
 function coneFloor(x) {
