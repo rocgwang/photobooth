@@ -50,7 +50,7 @@
 <div id="shotPanel" hidden>
   <div class="frame">
     <img id="shotImg" alt="방금 찍은 사진">
-    <div class="qr" id="shotMsg"><div class="wait">사진을 올리는 중…</div></div>
+    <div class="qr" id="shotMsg"><div class="wait">QR코드 생성 중…</div></div>
     <div class="notice">촬영된 사진은 QR코드 생성을 위해서만 저장되며, ATC 종료 후 모두 폐기됩니다.</div>
   </div>
 </div>
@@ -2932,13 +2932,13 @@ function finishShot() {
     document.getElementById('shotImg').src = URL.createObjectURL(blob);
     const panel = document.getElementById('shotPanel');
     const msg = document.getElementById('shotMsg');
-    msg.innerHTML = '<div class="wait">사진을 올리는 중…</div>';
+    msg.innerHTML = '<div class="wait">QR코드 생성 중…</div>';
     panel.hidden = false;
     clearTimeout(finishShot.timer);
     finishShot.timer = setTimeout(() => { panel.hidden = true; clearStamps(); }, S.panelSeconds * 1000);
     window.__lastShot = blob;
     const myShot = ++shotSeq;
-    uploadPhoto(blob, n => { if (myShot === shotSeq) msg.innerHTML = `<div class="wait">다시 올리는 중…<br>(${n}번째)</div>`; })
+    uploadPhoto(blob, n => { if (myShot === shotSeq) msg.innerHTML = `<div class="wait">QR코드 다시 생성 중…<br>(${n}번째)</div>`; })
       .then(url => { if (myShot === shotSeq) showQR(url); })
       .catch(err => {
         if (myShot !== shotSeq) return;
